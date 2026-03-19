@@ -1,0 +1,29 @@
+# Секреты и окружение
+.env
+config/api_keys.py
+
+# База данных
+*.db
+*.sqlite
+*.sqlite3
+
+# Кэш Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Логи
+*.log
+
+# IDE 
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Виртуальное окружение
+venv/
+.venv/
+env/
