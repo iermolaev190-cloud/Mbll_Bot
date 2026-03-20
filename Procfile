@@ -1,1 +1,1 @@
-worker: python fix_telegram_id_type.py
+worker: python migrate_db.py && python main.py
