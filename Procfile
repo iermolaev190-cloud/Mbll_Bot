@@ -1,1 +1,1 @@
-worker: python migrate_db.py && python main.py
+worker: python main.py
