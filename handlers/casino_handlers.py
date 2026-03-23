@@ -39,7 +39,6 @@ async def casino_main_menu(message: Message, session: AsyncSession, is_edit: boo
             first_name=message.from_user.first_name
         )
     
-    # Принудительно обновляем объект из базы
     await session.refresh(user)
     
     welcome_text = ""
@@ -80,7 +79,6 @@ async def casino_back(query: CallbackQuery, session: AsyncSession):
     await query.answer()
 
 
-# ========== БОУЛИНГ ==========
 @router.callback_query(F.data == "casino_bowling")
 async def bowling_bet(query: CallbackQuery, session: AsyncSession):
     user_repo = UserRepository(session)
@@ -121,7 +119,6 @@ async def bowling_play(query: CallbackQuery, session: AsyncSession):
         await query.answer(f"❌ Недостаточно монет! Нужно: {bet}", show_alert=True)
         return
 
-    # Списываем ставку
     user.coins -= bet
     await user_repo.update(user)
     await session.flush()
@@ -152,10 +149,8 @@ async def bowling_play(query: CallbackQuery, session: AsyncSession):
 
 💸 *Проигрыш:* -{bet}💰"""
 
-    # Принудительно коммитим изменения
     await session.commit()
     
-    # Обновляем баланс для отображения
     await session.refresh(user)
 
     buttons = [
@@ -171,7 +166,6 @@ async def bowling_play(query: CallbackQuery, session: AsyncSession):
     await query.answer()
 
 
-# ========== БАСКЕТБОЛ ==========
 @router.callback_query(F.data == "casino_basketball")
 async def basketball_bet(query: CallbackQuery, session: AsyncSession):
     user_repo = UserRepository(session)
@@ -254,7 +248,6 @@ async def basketball_play(query: CallbackQuery, session: AsyncSession):
     await query.answer()
 
 
-# ========== ДАРТС ==========
 @router.callback_query(F.data == "casino_darts")
 async def darts_bet(query: CallbackQuery, session: AsyncSession):
     user_repo = UserRepository(session)
