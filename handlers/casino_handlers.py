@@ -39,11 +39,8 @@ async def casino_main_menu(message: Message, session: AsyncSession, is_edit: boo
             first_name=message.from_user.first_name
         )
     
-    from sqlalchemy import select
-    result = await session.execute(
-        select(User).where(User.telegram_id == message.from_user.id)
-    )
-    user = result.scalar_one()
+    # Принудительно обновляем объект из базы
+    await session.refresh(user)
     
     welcome_text = ""
     if FEATURES.get("casino_talk"):
@@ -83,11 +80,12 @@ async def casino_back(query: CallbackQuery, session: AsyncSession):
     await query.answer()
 
 
-#БОУЛИНГ
+# ========== БОУЛИНГ ==========
 @router.callback_query(F.data == "casino_bowling")
 async def bowling_bet(query: CallbackQuery, session: AsyncSession):
     user_repo = UserRepository(session)
     user = await user_repo.get_by_telegram_id(query.from_user.id)
+    await session.refresh(user)
 
     buttons = [
         [InlineKeyboardButton(text="500💰", callback_data="bowling_500"),
@@ -123,8 +121,10 @@ async def bowling_play(query: CallbackQuery, session: AsyncSession):
         await query.answer(f"❌ Недостаточно монет! Нужно: {bet}", show_alert=True)
         return
 
+    # Списываем ставку
     user.coins -= bet
     await user_repo.update(user)
+    await session.flush()
 
     is_strike = random.random() < 0.35
 
@@ -132,11 +132,11 @@ async def bowling_play(query: CallbackQuery, session: AsyncSession):
         prize = bet * 2
         user.coins += prize
         await user_repo.update(user)
+        await session.flush()
 
         win_msg = ""
         if FEATURES.get("casino_talk"):
             win_msg = await get_casino_message("win") + "\n"
-        # ====================================
 
         result_text = f"""🎳 *СТРАЙК!*
 {win_msg}
@@ -146,12 +146,17 @@ async def bowling_play(query: CallbackQuery, session: AsyncSession):
         lose_msg = ""
         if FEATURES.get("casino_talk"):
             lose_msg = await get_casino_message("lose") + "\n"
-        # =====================================
 
         result_text = f"""🎳 *ПРОМАХ!*
 {lose_msg}
 
 💸 *Проигрыш:* -{bet}💰"""
+
+    # Принудительно коммитим изменения
+    await session.commit()
+    
+    # Обновляем баланс для отображения
+    await session.refresh(user)
 
     buttons = [
         [InlineKeyboardButton(text="🎳 ЕЩЕ РАЗ", callback_data="casino_bowling")],
@@ -166,11 +171,12 @@ async def bowling_play(query: CallbackQuery, session: AsyncSession):
     await query.answer()
 
 
-#БАСКЕТБОЛ
+# ========== БАСКЕТБОЛ ==========
 @router.callback_query(F.data == "casino_basketball")
 async def basketball_bet(query: CallbackQuery, session: AsyncSession):
     user_repo = UserRepository(session)
     user = await user_repo.get_by_telegram_id(query.from_user.id)
+    await session.refresh(user)
 
     buttons = [
         [InlineKeyboardButton(text="500💰", callback_data="basketball_500"),
@@ -208,6 +214,7 @@ async def basketball_play(query: CallbackQuery, session: AsyncSession):
 
     user.coins -= bet
     await user_repo.update(user)
+    await session.flush()
 
     is_score = random.random() < 0.25
 
@@ -215,6 +222,7 @@ async def basketball_play(query: CallbackQuery, session: AsyncSession):
         prize = bet * 3
         user.coins += prize
         await user_repo.update(user)
+        await session.flush()
 
         win_msg = await get_casino_message("win") if FEATURES.get("casino_talk") else ""
 
@@ -230,6 +238,9 @@ async def basketball_play(query: CallbackQuery, session: AsyncSession):
 
 💸 *Проигрыш:* -{bet}💰"""
 
+    await session.commit()
+    await session.refresh(user)
+
     buttons = [
         [InlineKeyboardButton(text="🏀 ЕЩЕ РАЗ", callback_data="casino_basketball")],
         [InlineKeyboardButton(text="🎰 В КАЗИНО", callback_data="casino_main")],
@@ -243,11 +254,12 @@ async def basketball_play(query: CallbackQuery, session: AsyncSession):
     await query.answer()
 
 
-#ДАРТС
+# ========== ДАРТС ==========
 @router.callback_query(F.data == "casino_darts")
 async def darts_bet(query: CallbackQuery, session: AsyncSession):
     user_repo = UserRepository(session)
     user = await user_repo.get_by_telegram_id(query.from_user.id)
+    await session.refresh(user)
 
     buttons = [
         [InlineKeyboardButton(text="500💰", callback_data="darts_500"),
@@ -285,6 +297,7 @@ async def darts_play(query: CallbackQuery, session: AsyncSession):
 
     user.coins -= bet
     await user_repo.update(user)
+    await session.flush()
 
     is_bullseye = random.random() < 0.15
 
@@ -292,6 +305,7 @@ async def darts_play(query: CallbackQuery, session: AsyncSession):
         prize = bet * 5
         user.coins += prize
         await user_repo.update(user)
+        await session.flush()
 
         win_msg = await get_casino_message("win") if FEATURES.get("casino_talk") else ""
 
@@ -307,6 +321,9 @@ async def darts_play(query: CallbackQuery, session: AsyncSession):
 
 💸 *Проигрыш:* -{bet}💰"""
 
+    await session.commit()
+    await session.refresh(user)
+
     buttons = [
         [InlineKeyboardButton(text="🎯 ЕЩЕ РАЗ", callback_data="casino_darts")],
         [InlineKeyboardButton(text="🎰 В КАЗИНО", callback_data="casino_main")],
@@ -320,11 +337,12 @@ async def darts_play(query: CallbackQuery, session: AsyncSession):
     await query.answer()
 
 
-#СЛОТЫ
+# ========== СЛОТЫ ==========
 @router.callback_query(F.data == "casino_slots")
 async def slots_bet(query: CallbackQuery, session: AsyncSession):
     user_repo = UserRepository(session)
     user = await user_repo.get_by_telegram_id(query.from_user.id)
+    await session.refresh(user)
 
     buttons = [
         [InlineKeyboardButton(text="500💰", callback_data="slots_500"),
@@ -362,6 +380,7 @@ async def slots_play(query: CallbackQuery, session: AsyncSession):
 
     user.coins -= bet
     await user_repo.update(user)
+    await session.flush()
 
     is_jackpot = random.random() < 0.07
 
@@ -369,6 +388,7 @@ async def slots_play(query: CallbackQuery, session: AsyncSession):
         prize = bet * 10
         user.coins += prize
         await user_repo.update(user)
+        await session.flush()
 
         win_msg = await get_casino_message("win") if FEATURES.get("casino_talk") else ""
 
@@ -391,6 +411,9 @@ async def slots_play(query: CallbackQuery, session: AsyncSession):
 ╚═══════╩═══════╩═══════╝
 
 💸 *Проигрыш:* -{bet}💰"""
+
+    await session.commit()
+    await session.refresh(user)
 
     buttons = [
         [InlineKeyboardButton(text="🎰 ЕЩЕ РАЗ", callback_data="casino_slots")],
