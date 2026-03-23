@@ -13,8 +13,8 @@ class DatabaseMiddleware(BaseMiddleware):
             data["session"] = session
             try:
                 result = await handler(event, data)
-                await session.commit()  
+                await session.commit()
                 return result
-            except Exception as e:
-                await session.rollback()  
-                raise e
+            except Exception:
+                await session.rollback()
+                raise
