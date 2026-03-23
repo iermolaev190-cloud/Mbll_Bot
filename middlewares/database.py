@@ -11,10 +11,6 @@ class DatabaseMiddleware(BaseMiddleware):
     ) -> Any:
         async with AsyncSessionLocal() as session:
             data["session"] = session
-            try:
-                result = await handler(event, data)
-                await session.commit()
-                return result
-            except Exception:
-                await session.rollback()
-                raise
+            result = await handler(event, data)
+            await session.commit()
+            return result
