@@ -28,6 +28,8 @@ async def casino_main_menu(message: Message, session: AsyncSession, is_edit: boo
     user_repo = UserRepository(session)
     user = await user_repo.get_by_telegram_id(message.from_user.id)
 
+    await session.refresh(user)
+
     if not user:
         user = await user_repo.get_or_create(
             telegram_id=message.from_user.id,
