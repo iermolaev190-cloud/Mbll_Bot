@@ -25,27 +25,30 @@ async def casino_command(message: Message, session: AsyncSession):
 
 
 async def casino_main_menu(message: Message, session: AsyncSession, is_edit: bool = False):
+    """Главное меню казино"""
     user_repo = UserRepository(session)
-
-    await session.refresh(user)
-
+    
+    user = await user_repo.get_by_telegram_id(message.from_user.id)
+    
     if not user:
         user = await user_repo.get_or_create(
             telegram_id=message.from_user.id,
             username=message.from_user.username,
             first_name=message.from_user.first_name
         )
-
+    
     from sqlalchemy import select
     result = await session.execute(
         select(User).where(User.telegram_id == message.from_user.id)
-        
+    )
+    user = result.scalar_one()
+    
     welcome_text = ""
     if FEATURES.get("casino_talk"):
         welcome = await get_casino_message("welcome")
         if welcome:
             welcome_text = f"\n{welcome}\n"
-    
+
     buttons = [
         [InlineKeyboardButton(text="🎳 БОУЛИНГ — x2", callback_data="casino_bowling")],
         [InlineKeyboardButton(text="🏀 БАСКЕТБОЛ — x3", callback_data="casino_basketball")],
