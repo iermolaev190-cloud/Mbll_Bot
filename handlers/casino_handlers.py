@@ -4,7 +4,6 @@ from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKe
 from aiogram.filters import Command
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from database.models import User
 from database.repository.user_repo import UserRepository
 from keyboards.callbacks import MainMenuCallback
 from config.texts import BUTTON_BACK
@@ -15,24 +14,26 @@ router = Router()
 
 @router.callback_query(MainMenuCallback.filter(F.action == "casino"))
 async def casino_from_main(query: CallbackQuery, session: AsyncSession):
-    await casino_main_menu(query.message, session, is_edit=True)
+    await casino_main_menu(query.message, session, is_edit=True, user_id=query.from_user.id)
     await query.answer()
 
 @router.message(Command("casino"))
 @router.message(Command("game"))
 async def casino_command(message: Message, session: AsyncSession):
-    await casino_main_menu(message, session, is_edit=False)
+    await casino_main_menu(message, session, is_edit=False, user_id=message.from_user.id)
 
-async def casino_main_menu(message: Message, session: AsyncSession, is_edit: bool = False):
-    user_repo = UserRepository(session)
-    session.expire_all()
-    user = await user_repo.get_by_telegram_id(message.from_user.id)
-    if not user:
-        user = await user_repo.get_or_create(
-            telegram_id=message.from_user.id,
-            username=message.from_user.username,
-            first_name=message.from_user.first_name
-        )
+@router.callback_query(F.data == "casino_main")
+async def casino_back(query: CallbackQuery, session: AsyncSession):
+    await casino_main_menu(query.message, session, is_edit=True, user_id=query.from_user.id)
+    await query.answer()
+
+async def casino_main_menu(message: Message, session: AsyncSession, is_edit: bool = False, user_id: int = None):
+    target_id = user_id or message.chat.id
+    result = await session.execute(
+        text("SELECT coins FROM users WHERE telegram_id = :tid"),
+        {"tid": target_id}
+    )
+    coins = result.scalar() or 0
     welcome_text = ""
     if FEATURES.get("casino_talk"):
         welcome = await get_casino_message("welcome")
@@ -48,7 +49,7 @@ async def casino_main_menu(message: Message, session: AsyncSession, is_edit: boo
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     text = f"""🎰 *LAS VEGAS CASINO* 🎰
 {welcome_text}
-💰 *Твой баланс:* {user.coins:,} монет
+💰 *Твой баланс:* {coins:,} монет
 
 🎳 *БОУЛИНГ* — угадай Страйк (x2)
 🏀 *БАСКЕТБОЛ* — угадай попадание (x3)
@@ -61,15 +62,9 @@ async def casino_main_menu(message: Message, session: AsyncSession, is_edit: boo
     else:
         await message.answer(text, reply_markup=keyboard)
 
-@router.callback_query(F.data == "casino_main")
-async def casino_back(query: CallbackQuery, session: AsyncSession):
-    await casino_main_menu(query.message, session, is_edit=True)
-    await query.answer()
-
 @router.callback_query(F.data == "casino_bowling")
 async def bowling_bet(query: CallbackQuery, session: AsyncSession):
     user_repo = UserRepository(session)
-    session.expire_all()
     user = await user_repo.get_by_telegram_id(query.from_user.id)
     buttons = [
         [InlineKeyboardButton(text="500💰", callback_data="bowling_500"),
@@ -128,14 +123,13 @@ async def bowling_play(query: CallbackQuery, session: AsyncSession):
 
 💸 *Проигрыш:* -{bet}💰"""
     await session.commit()
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
     buttons = [
         [InlineKeyboardButton(text="🎳 ЕЩЕ РАЗ", callback_data="casino_bowling")],
         [InlineKeyboardButton(text="🎰 В КАЗИНО", callback_data="casino_main")],
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     await query.message.edit_text(
-        f"{result_text}\n\n💰 *Баланс:* {user.coins}💰",
+        f"{result_text}\n\n💰 *Баланс:* {user.coins - bet + (prize if is_strike else 0)}💰",
         reply_markup=keyboard
     )
     await query.answer()
@@ -143,7 +137,6 @@ async def bowling_play(query: CallbackQuery, session: AsyncSession):
 @router.callback_query(F.data == "casino_basketball")
 async def basketball_bet(query: CallbackQuery, session: AsyncSession):
     user_repo = UserRepository(session)
-    session.expire_all()
     user = await user_repo.get_by_telegram_id(query.from_user.id)
     buttons = [
         [InlineKeyboardButton(text="500💰", callback_data="basketball_500"),
@@ -198,14 +191,13 @@ async def basketball_play(query: CallbackQuery, session: AsyncSession):
 
 💸 *Проигрыш:* -{bet}💰"""
     await session.commit()
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
     buttons = [
         [InlineKeyboardButton(text="🏀 ЕЩЕ РАЗ", callback_data="casino_basketball")],
         [InlineKeyboardButton(text="🎰 В КАЗИНО", callback_data="casino_main")],
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     await query.message.edit_text(
-        f"{result_text}\n\n💰 *Баланс:* {user.coins}💰",
+        f"{result_text}\n\n💰 *Баланс:* {user.coins - bet + (prize if is_score else 0)}💰",
         reply_markup=keyboard
     )
     await query.answer()
@@ -213,7 +205,6 @@ async def basketball_play(query: CallbackQuery, session: AsyncSession):
 @router.callback_query(F.data == "casino_darts")
 async def darts_bet(query: CallbackQuery, session: AsyncSession):
     user_repo = UserRepository(session)
-    session.expire_all()
     user = await user_repo.get_by_telegram_id(query.from_user.id)
     buttons = [
         [InlineKeyboardButton(text="500💰", callback_data="darts_500"),
@@ -268,14 +259,13 @@ async def darts_play(query: CallbackQuery, session: AsyncSession):
 
 💸 *Проигрыш:* -{bet}💰"""
     await session.commit()
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
     buttons = [
         [InlineKeyboardButton(text="🎯 ЕЩЕ РАЗ", callback_data="casino_darts")],
         [InlineKeyboardButton(text="🎰 В КАЗИНО", callback_data="casino_main")],
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     await query.message.edit_text(
-        f"{result_text}\n\n💰 *Баланс:* {user.coins}💰",
+        f"{result_text}\n\n💰 *Баланс:* {user.coins - bet + (prize if is_bullseye else 0)}💰",
         reply_markup=keyboard
     )
     await query.answer()
@@ -283,7 +273,6 @@ async def darts_play(query: CallbackQuery, session: AsyncSession):
 @router.callback_query(F.data == "casino_slots")
 async def slots_bet(query: CallbackQuery, session: AsyncSession):
     user_repo = UserRepository(session)
-    session.expire_all()
     user = await user_repo.get_by_telegram_id(query.from_user.id)
     buttons = [
         [InlineKeyboardButton(text="500💰", callback_data="slots_500"),
@@ -345,14 +334,13 @@ async def slots_play(query: CallbackQuery, session: AsyncSession):
 
 💸 *Проигрыш:* -{bet}💰"""
     await session.commit()
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
     buttons = [
         [InlineKeyboardButton(text="🎰 ЕЩЕ РАЗ", callback_data="casino_slots")],
         [InlineKeyboardButton(text="🎰 В КАЗИНО", callback_data="casino_main")],
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     await query.message.edit_text(
-        f"{result_text}\n\n💰 *Баланс:* {user.coins}💰",
+        f"{result_text}\n\n💰 *Баланс:* {user.coins - bet + (prize if is_jackpot else 0)}💰",
         reply_markup=keyboard
     )
     await query.answer()
