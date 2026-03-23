@@ -14,13 +14,6 @@ class UserRepository(BaseRepository[User]):
         result = await self.session.execute(select(User).where(User.telegram_id == telegram_id))
         return result.scalars().first()
 
-    async def update_last_visit(self, user_id: int):
-        """Обновить время последнего визита"""
-        user = await self.get_by_id(user_id)
-        if user:
-            user.last_visit = datetime.now(timezone.utc).replace(tzinfo=None)
-            await self.update(user)
-
     async def get_or_create(self, telegram_id: int, username: str = None, first_name: str = None) -> User:
         user = await self.get_by_telegram_id(telegram_id)
         if not user:
@@ -63,11 +56,11 @@ class UserRepository(BaseRepository[User]):
             await self.update(user)
 
     async def update_last_visit(self, user_id: int):
-    """Обновить время последнего визита"""
-    user = await self.get_by_id(user_id)
-    if user:
-        user.last_visit = datetime.now(timezone.utc).replace(tzinfo=None)
-        await self.update(user)
+        """Обновить время последнего визита"""
+        user = await self.get_by_id(user_id)
+        if user:
+            user.last_visit = datetime.now(timezone.utc).replace(tzinfo=None)
+            await self.update(user)
 
     async def get_new_today(self) -> int:
         from datetime import timedelta
@@ -87,7 +80,6 @@ class UserRepository(BaseRepository[User]):
             user.ban_reason = reason
             await self.update(user)
 
-            # Проверяем сохранилось ли
             check = await self.get_by_id(user_id)
             print(f"   После бана: is_banned = {check.is_banned}")
             return True
@@ -104,7 +96,6 @@ class UserRepository(BaseRepository[User]):
             user.ban_reason = None
             await self.update(user)
 
-           
             check = await self.get_by_id(user_id)
             print(f"   После разбана: is_banned = {check.is_banned}")
             return True
