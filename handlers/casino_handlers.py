@@ -3,7 +3,7 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from sqlalchemy import text as sql_text
 from database.repository.user_repo import UserRepository
 from keyboards.callbacks import MainMenuCallback
 from config.texts import BUTTON_BACK
@@ -30,7 +30,7 @@ async def casino_back(query: CallbackQuery, session: AsyncSession):
 async def casino_main_menu(message: Message, session: AsyncSession, is_edit: bool = False, user_id: int = None):
     target_id = user_id or message.chat.id
     result = await session.execute(
-        text("SELECT coins FROM users WHERE telegram_id = :tid"),
+        sql_text("SELECT coins FROM users WHERE telegram_id = :tid"),
         {"tid": target_id}
     )
     coins = result.scalar() or 0
@@ -47,7 +47,7 @@ async def casino_main_menu(message: Message, session: AsyncSession, is_edit: boo
         [InlineKeyboardButton(text=BUTTON_BACK, callback_data=MainMenuCallback(action="profile").pack())],
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    text = f"""🎰 *LAS VEGAS CASINO* 🎰
+    msg_text = f"""🎰 *LAS VEGAS CASINO* 🎰
 {welcome_text}
 💰 *Твой баланс:* {coins:,} монет
 
@@ -58,9 +58,9 @@ async def casino_main_menu(message: Message, session: AsyncSession, is_edit: boo
 
 Выбери игру:"""
     if is_edit:
-        await message.edit_text(text, reply_markup=keyboard)
+        await message.edit_text(msg_text, reply_markup=keyboard)
     else:
-        await message.answer(text, reply_markup=keyboard)
+        await message.answer(msg_text, reply_markup=keyboard)
 
 @router.callback_query(F.data == "casino_bowling")
 async def bowling_bet(query: CallbackQuery, session: AsyncSession):
@@ -97,14 +97,14 @@ async def bowling_play(query: CallbackQuery, session: AsyncSession):
         await query.answer(f"❌ Недостаточно монет! Нужно: {bet}", show_alert=True)
         return
     await session.execute(
-        text("UPDATE users SET coins = coins - :bet WHERE telegram_id = :tg_id"),
+        sql_text("UPDATE users SET coins = coins - :bet WHERE telegram_id = :tg_id"),
         {"bet": bet, "tg_id": query.from_user.id}
     )
     is_strike = random.random() < 0.35
     if is_strike:
         prize = bet * 2
         await session.execute(
-            text("UPDATE users SET coins = coins + :prize WHERE telegram_id = :tg_id"),
+            sql_text("UPDATE users SET coins = coins + :prize WHERE telegram_id = :tg_id"),
             {"prize": prize, "tg_id": query.from_user.id}
         )
         win_msg = ""
@@ -169,14 +169,14 @@ async def basketball_play(query: CallbackQuery, session: AsyncSession):
         await query.answer(f"❌ Недостаточно монет! Нужно: {bet}", show_alert=True)
         return
     await session.execute(
-        text("UPDATE users SET coins = coins - :bet WHERE telegram_id = :tg_id"),
+        sql_text("UPDATE users SET coins = coins - :bet WHERE telegram_id = :tg_id"),
         {"bet": bet, "tg_id": query.from_user.id}
     )
     is_score = random.random() < 0.25
     if is_score:
         prize = bet * 3
         await session.execute(
-            text("UPDATE users SET coins = coins + :prize WHERE telegram_id = :tg_id"),
+            sql_text("UPDATE users SET coins = coins + :prize WHERE telegram_id = :tg_id"),
             {"prize": prize, "tg_id": query.from_user.id}
         )
         win_msg = await get_casino_message("win") if FEATURES.get("casino_talk") else ""
@@ -237,14 +237,14 @@ async def darts_play(query: CallbackQuery, session: AsyncSession):
         await query.answer(f"❌ Недостаточно монет! Нужно: {bet}", show_alert=True)
         return
     await session.execute(
-        text("UPDATE users SET coins = coins - :bet WHERE telegram_id = :tg_id"),
+        sql_text("UPDATE users SET coins = coins - :bet WHERE telegram_id = :tg_id"),
         {"bet": bet, "tg_id": query.from_user.id}
     )
     is_bullseye = random.random() < 0.15
     if is_bullseye:
         prize = bet * 5
         await session.execute(
-            text("UPDATE users SET coins = coins + :prize WHERE telegram_id = :tg_id"),
+            sql_text("UPDATE users SET coins = coins + :prize WHERE telegram_id = :tg_id"),
             {"prize": prize, "tg_id": query.from_user.id}
         )
         win_msg = await get_casino_message("win") if FEATURES.get("casino_talk") else ""
@@ -305,14 +305,14 @@ async def slots_play(query: CallbackQuery, session: AsyncSession):
         await query.answer(f"❌ Недостаточно монет! Нужно: {bet}", show_alert=True)
         return
     await session.execute(
-        text("UPDATE users SET coins = coins - :bet WHERE telegram_id = :tg_id"),
+        sql_text("UPDATE users SET coins = coins - :bet WHERE telegram_id = :tg_id"),
         {"bet": bet, "tg_id": query.from_user.id}
     )
     is_jackpot = random.random() < 0.07
     if is_jackpot:
         prize = bet * 10
         await session.execute(
-            text("UPDATE users SET coins = coins + :prize WHERE telegram_id = :tg_id"),
+            sql_text("UPDATE users SET coins = coins + :prize WHERE telegram_id = :tg_id"),
             {"prize": prize, "tg_id": query.from_user.id}
         )
         win_msg = await get_casino_message("win") if FEATURES.get("casino_talk") else ""
