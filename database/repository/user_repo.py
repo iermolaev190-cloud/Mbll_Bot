@@ -63,10 +63,11 @@ class UserRepository(BaseRepository[User]):
             await self.update(user)
 
     async def update_last_visit(self, user_id: int):
-        user = await self.get_by_id(user_id)
-        if user:
-            user.last_visit = datetime.utcnow()
-            await self.update(user)
+    """Обновить время последнего визита"""
+    user = await self.get_by_id(user_id)
+    if user:
+        user.last_visit = datetime.now(timezone.utc).replace(tzinfo=None)
+        await self.update(user)
 
     async def get_new_today(self) -> int:
         from datetime import timedelta
@@ -103,7 +104,7 @@ class UserRepository(BaseRepository[User]):
             user.ban_reason = None
             await self.update(user)
 
-            # Проверяем
+           
             check = await self.get_by_id(user_id)
             print(f"   После разбана: is_banned = {check.is_banned}")
             return True
