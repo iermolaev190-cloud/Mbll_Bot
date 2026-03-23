@@ -25,6 +25,7 @@ async def casino_command(message: Message, session: AsyncSession):
 
 async def casino_main_menu(message: Message, session: AsyncSession, is_edit: bool = False):
     user_repo = UserRepository(session)
+    await session.expire_all()
     user = await user_repo.get_by_telegram_id(message.from_user.id)
     if not user:
         user = await user_repo.get_or_create(
@@ -32,7 +33,6 @@ async def casino_main_menu(message: Message, session: AsyncSession, is_edit: boo
             username=message.from_user.username,
             first_name=message.from_user.first_name
         )
-    await session.refresh(user)
     welcome_text = ""
     if FEATURES.get("casino_talk"):
         welcome = await get_casino_message("welcome")
@@ -69,8 +69,8 @@ async def casino_back(query: CallbackQuery, session: AsyncSession):
 @router.callback_query(F.data == "casino_bowling")
 async def bowling_bet(query: CallbackQuery, session: AsyncSession):
     user_repo = UserRepository(session)
+    await session.expire_all()
     user = await user_repo.get_by_telegram_id(query.from_user.id)
-    await session.refresh(user)
     buttons = [
         [InlineKeyboardButton(text="500💰", callback_data="bowling_500"),
          InlineKeyboardButton(text="1,000💰", callback_data="bowling_1000")],
@@ -143,8 +143,8 @@ async def bowling_play(query: CallbackQuery, session: AsyncSession):
 @router.callback_query(F.data == "casino_basketball")
 async def basketball_bet(query: CallbackQuery, session: AsyncSession):
     user_repo = UserRepository(session)
+    await session.expire_all()
     user = await user_repo.get_by_telegram_id(query.from_user.id)
-    await session.refresh(user)
     buttons = [
         [InlineKeyboardButton(text="500💰", callback_data="basketball_500"),
          InlineKeyboardButton(text="1,000💰", callback_data="basketball_1000")],
@@ -213,8 +213,8 @@ async def basketball_play(query: CallbackQuery, session: AsyncSession):
 @router.callback_query(F.data == "casino_darts")
 async def darts_bet(query: CallbackQuery, session: AsyncSession):
     user_repo = UserRepository(session)
+    await session.expire_all()
     user = await user_repo.get_by_telegram_id(query.from_user.id)
-    await session.refresh(user)
     buttons = [
         [InlineKeyboardButton(text="500💰", callback_data="darts_500"),
          InlineKeyboardButton(text="1,000💰", callback_data="darts_1000")],
@@ -283,8 +283,8 @@ async def darts_play(query: CallbackQuery, session: AsyncSession):
 @router.callback_query(F.data == "casino_slots")
 async def slots_bet(query: CallbackQuery, session: AsyncSession):
     user_repo = UserRepository(session)
+    await session.expire_all()
     user = await user_repo.get_by_telegram_id(query.from_user.id)
-    await session.refresh(user)
     buttons = [
         [InlineKeyboardButton(text="500💰", callback_data="slots_500"),
          InlineKeyboardButton(text="1,000💰", callback_data="slots_1000")],
