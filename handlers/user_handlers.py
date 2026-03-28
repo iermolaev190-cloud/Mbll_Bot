@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from database.models import FarmSlot, Character
@@ -85,6 +85,9 @@ async def format_user_profile(user, session: AsyncSession):
     msg = msg.replace("👤 *ПРОФИЛЬ*", f"👤 *ПРОФИЛЬ*{mood_text}")
     return msg
 
+# ========== ОБРАБОТКА КОМАНД С УПОМИНАНИЕМ ==========
+# Используем Command фильтр, который автоматически обрабатывает /command@botname
+
 @router.message(Command("start"))
 async def start_command(message: Message, session: AsyncSession):
     user = await get_or_create_user(session, message.from_user.id, message.from_user.username, message.from_user.first_name)
@@ -123,11 +126,7 @@ async def profile_command(message: Message, session: AsyncSession):
     await user_repo.update(user)
     
     msg = await format_user_profile(user, session)
-    
-    if is_private(message):
-        await message.answer(msg, reply_markup=main_menu_kb())
-    else:
-        await message.answer(msg)
+    await message.answer(msg)
 
 @router.callback_query(MainMenuCallback.filter(F.action == "profile"))
 async def show_profile_callback(query: CallbackQuery, session: AsyncSession):
@@ -192,6 +191,52 @@ async def collect_income_command(message: Message, session: AsyncSession):
             msg += f"{emoji} {rarity.title()}: {amount}💰/ч\n"
     
     await message.answer(msg)
+
+@router.message(Command("farm"))
+async def farm_command(message: Message, session: AsyncSession):
+    if not is_private(message):
+        await message.answer("🌱 *Ферма* доступна только в личных сообщениях с ботом!\n\nИспользуйте /start в личке, чтобы начать играть.")
+        return
+    
+    # Перенаправляем в farm_handlers
+    from handlers.farm_handlers import farm_command as farm_cmd
+    await farm_cmd(message, session)
+
+@router.message(Command("battle"))
+async def battle_command(message: Message, session: AsyncSession):
+    if not is_private(message):
+        await message.answer("⚔️ *Боевая арена* доступна только в личных сообщениях с ботом!\n\nВ группах используйте `/pvp @username` для дуэлей.")
+        return
+    
+    from handlers.battle_handlers import battle_command as battle_cmd
+    await battle_cmd(message, session)
+
+@router.message(Command("market"))
+async def market_command(message: Message, session: AsyncSession):
+    if not is_private(message):
+        await message.answer("🏪 *Рынок* доступен только в личных сообщениях с ботом!")
+        return
+    
+    from handlers.market_handlers import market_command as market_cmd
+    await market_cmd(message, session)
+
+@router.message(Command("casino"))
+async def casino_command(message: Message, session: AsyncSession):
+    if not is_private(message):
+        await message.answer("🎰 *Казино* доступно только в личных сообщениях с ботом!")
+        return
+    
+    from handlers.casino_handlers import casino_command as casino_cmd
+    await casino_cmd(message, session)
+
+@router.message(Command("pvp"))
+async def pvp_command(message: Message, session: AsyncSession):
+    if is_private(message):
+        await message.answer("⚔️ *PvP дуэли* доступны только в группах!\n\nДобавьте бота в группу и используйте `/pvp @username`.")
+        return
+    
+    from handlers.group_pvp import start_pvp_duel
+    await start_pvp_duel(message, session)
 
 @router.message(Command("help"))
 async def help_command(message: Message):
