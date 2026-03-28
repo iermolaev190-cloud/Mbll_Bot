@@ -17,9 +17,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 async def set_commands(bot: Bot):
-    """Устанавливает меню команд для бота"""
     commands = [
         BotCommand(command="start", description="🚀 Запустить бота"),
         BotCommand(command="profile", description="👤 Мой профиль"),
@@ -30,11 +28,11 @@ async def set_commands(bot: Bot):
         BotCommand(command="market", description="🏪 Рынок"),
         BotCommand(command="casino", description="🎰 Казино"),
         BotCommand(command="pvp", description="⚔️ Вызвать на дуэль (в группе)"),
+        BotCommand(command="rating", description="🏆 Рейтинги"),
         BotCommand(command="help", description="❓ Помощь"),
     ]
     await bot.set_my_commands(commands)
     logger.info("✅ Меню команд установлено")
-
 
 async def main():
     logger.info("Инициализация БД...")
@@ -46,7 +44,6 @@ async def main():
         default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
     )
     
-    # Устанавливаем меню команд
     await set_commands(bot)
     
     dp = Dispatcher(storage=MemoryStorage())
@@ -84,7 +81,6 @@ async def main():
     finally:
         await close_db()
         await bot.session.close()
-
 
 if __name__ == "__main__":
     asyncio.run(main())
