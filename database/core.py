@@ -10,13 +10,15 @@ if DATABASE_URL and "postgresql" in DATABASE_URL:
     elif DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 
-print(f"🔌 Подключение к БД: {DATABASE_URL[:50]}...") 
+print(f"🔌 Подключение к БД: {DATABASE_URL[:50]}...")
 
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
     future=True,
-    pool_pre_ping=True
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10
 )
 
 AsyncSessionLocal = async_sessionmaker(
@@ -30,10 +32,8 @@ async def get_session():
         yield session
 
 async def init_db():
-    """Инициализация БД - создание таблиц"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 async def close_db():
-    """Закрытие соединения с БД"""
     await engine.dispose()
