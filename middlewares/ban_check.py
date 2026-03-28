@@ -8,24 +8,27 @@ from config.settings import settings
 class BanCheckMiddleware(BaseMiddleware):
     async def __call__(
         self,
-        handler: Callable[[Update, dict[str, Any]], Awaitable[Any]],
-        event: Update,
-        data: dict[str, Any]
+        handler: Callable[[Any, dict[str, Any]], Awaitable[Any]],
+        event: Any,
+        data: dict[str, Any],
     ) -> Any:
         user_id = None
         message_obj = None
         is_callback = False
         
-        if event.message:
-            user_id = event.message.from_user.id
-            message_obj = event.message
+        # Определяем тип события
+        if isinstance(event, Message):
+            user_id = event.from_user.id
+            message_obj = event
             is_callback = False
-            if event.message.from_user.is_bot:
+            if event.from_user.is_bot:
                 return await handler(event, data)
-        elif event.callback_query:
-            user_id = event.callback_query.from_user.id
-            message_obj = event.callback_query.message
+        elif isinstance(event, CallbackQuery):
+            user_id = event.from_user.id
+            message_obj = event.message
             is_callback = True
+        else:
+            return await handler(event, data)
         
         if not user_id:
             return await handler(event, data)
@@ -47,7 +50,7 @@ class BanCheckMiddleware(BaseMiddleware):
                 try:
                     await message_obj.answer(ban_message)
                     if is_callback:
-                        await event.callback_query.answer("⛔ Вы забанены!", show_alert=True)
+                        await event.answer("⛔ Вы забанены!", show_alert=True)
                 except TelegramForbiddenError:
                     pass
                 
