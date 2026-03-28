@@ -268,7 +268,7 @@ async def start_pve(query: CallbackQuery, session: AsyncSession):
 🗣️ "{enemy['talk']}"
 ⚠️ *Особенность:* {enemy['mechanic']}
 
-Выбери сложность:"""
+Выбери сложность:
     
     await query.message.edit_text(intro_text, reply_markup=keyboard)
     await query.answer()
@@ -279,26 +279,27 @@ async def start_pve_with_difficulty(query: CallbackQuery, session: AsyncSession)
     if not user:
         await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
         return
-    
+
     difficulty = query.data.split("_")[1]
-    
+
     battle_engine = BattleEngine(session)
     character_repo = CharacterRepository(session)
-    
+
     team = await character_repo.get_team(user.id)
     avg_level = sum(char.level for char in team) // 3 if team else 1
-    
+
+    enemy = None
     enemy_info = ""
     if FEATURES.get("smart_pve") or FEATURES.get("battle_trash_talk"):
         enemy = await generate_pve_enemy(difficulty, avg_level)
         enemy_info = f"\n👤 *Противник:* {enemy['name']}\n🗣️ \"{enemy['talk']}\"\n"
-    
+
     result = await battle_engine.start_pve_battle(user.id, difficulty)
-    
+
     if "error" in result:
         await query.answer(result.get("message", "❌ Ошибка боя"), show_alert=True)
         return
-    
+
     if result["player_won"]:
         msg = f"""🏆 *ПОБЕДА!* ({difficulty.upper()})
 {enemy_info}
@@ -312,6 +313,12 @@ async def start_pve_with_difficulty(query: CallbackQuery, session: AsyncSession)
 💰 +{result['coins']} монет (утешение)
 
 """
+
+    if result.get("level_ups"):
+        msg += "\n📈 *Повышение уровня:*\n" + "\n".join(result["level_ups"])
+
+    await query.message.edit_text(msg, reply_markup=battle_menu_kb())
+    await query.answer("⚔️ Бой завершен!")
     
     if result.get("level_ups"):
         msg += "\n📈 *Повышение уровня:*\n" + "\n".join(result["level_ups"])
