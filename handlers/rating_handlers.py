@@ -11,6 +11,7 @@ from keyboards.callbacks import MainMenuCallback
 from config.texts import BUTTON_BACK
 from config.features import FEATURES
 from datetime import datetime, timedelta, timezone
+from database.utils import get_user_or_create
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -62,23 +63,24 @@ async def rating_menu(message: Message):
 
 @router.callback_query(F.data == "rating_coins")
 async def rating_coins(query: CallbackQuery, session: AsyncSession):
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+
     user_repo = UserRepository(session)
     result = await session.execute(
         select(User).order_by(desc(User.coins)).limit(10)
     )
     top_users = result.scalars().all()
-    current_user = await user_repo.get_by_telegram_id(query.from_user.id)
-    if not current_user:
-        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
-        return
-    current_place = await get_user_place(session, current_user.id, User.coins, "coins")
+    current_place = await get_user_place(session, user.id, User.coins, "coins")
     text = "💰 *ТОП ПО БОГАТСТВУ*\n\n"
     for i, user in enumerate(top_users, 1):
         medal = get_medal(i)
         name = user.first_name or f"Игрок {user.telegram_id}"
         text += f"{medal} {name} — {format_number(user.coins)}💰\n"
     text += f"\n📍 *Твоё место:* #{current_place}\n"
-    text += f"💵 *Твои монеты:* {format_number(current_user.coins)}💰"
+    text += f"💵 *Твои монеты:* {format_number(user.coins)}💰"
     buttons = [[InlineKeyboardButton(text="⬅️ К списку", callback_data="rating_back")]]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     await query.message.edit_text(text, reply_markup=keyboard)
@@ -86,23 +88,24 @@ async def rating_coins(query: CallbackQuery, session: AsyncSession):
 
 @router.callback_query(F.data == "rating_wins")
 async def rating_wins(query: CallbackQuery, session: AsyncSession):
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+
     user_repo = UserRepository(session)
     result = await session.execute(
         select(User).order_by(desc(User.battle_wins)).limit(10)
     )
     top_users = result.scalars().all()
-    current_user = await user_repo.get_by_telegram_id(query.from_user.id)
-    if not current_user:
-        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
-        return
-    current_place = await get_user_place(session, current_user.id, User.battle_wins, "battle_wins")
+    current_place = await get_user_place(session, user.id, User.battle_wins, "battle_wins")
     text = "🏆 *ТОП ПО ПОБЕДАМ*\n\n"
     for i, user in enumerate(top_users, 1):
         medal = get_medal(i)
         name = user.first_name or f"Игрок {user.telegram_id}"
         text += f"{medal} {name} — {user.battle_wins} ⚔️\n"
     text += f"\n📍 *Твоё место:* #{current_place}\n"
-    text += f"🏆 *Твои победы:* {current_user.battle_wins}"
+    text += f"🏆 *Твои победы:* {user.battle_wins}"
     buttons = [[InlineKeyboardButton(text="⬅️ К списку", callback_data="rating_back")]]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     await query.message.edit_text(text, reply_markup=keyboard)
@@ -110,21 +113,22 @@ async def rating_wins(query: CallbackQuery, session: AsyncSession):
 
 @router.callback_query(F.data == "rating_battles")
 async def rating_battles(query: CallbackQuery, session: AsyncSession):
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+
     user_repo = UserRepository(session)
     result = await session.execute(
         select(User).order_by(desc(User.battle_wins + User.battle_losses)).limit(10)
     )
     top_users = result.scalars().all()
-    current_user = await user_repo.get_by_telegram_id(query.from_user.id)
-    if not current_user:
-        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
-        return
-    current_battles = current_user.battle_wins + current_user.battle_losses
+    current_battles = user.battle_wins + user.battle_losses
     all_users = await session.execute(
         select(User).order_by(desc(User.battle_wins + User.battle_losses))
     )
     all_list = all_users.scalars().all()
-    current_place = next((i for i, u in enumerate(all_list, 1) if u.id == current_user.id), 0)
+    current_place = next((i for i, u in enumerate(all_list, 1) if u.id == user.id), 0)
     text = "⚔️ *ТОП ПО БОЯМ*\n\n"
     for i, user in enumerate(top_users, 1):
         medal = get_medal(i)
@@ -140,25 +144,26 @@ async def rating_battles(query: CallbackQuery, session: AsyncSession):
 
 @router.callback_query(F.data == "rating_characters")
 async def rating_characters(query: CallbackQuery, session: AsyncSession):
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+
     user_repo = UserRepository(session)
     char_repo = CharacterRepository(session)
     all_users = await user_repo.get_all()
     user_char_counts = []
-    for user in all_users:
-        chars = await char_repo.get_by_owner(user.id)
-        user_char_counts.append((user, len(chars)))
+    for u in all_users:
+        chars = await char_repo.get_by_owner(u.id)
+        user_char_counts.append((u, len(chars)))
     user_char_counts.sort(key=lambda x: x[1], reverse=True)
     top_users = user_char_counts[:10]
-    current_user = await user_repo.get_by_telegram_id(query.from_user.id)
-    if not current_user:
-        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
-        return
-    current_count = len(await char_repo.get_by_owner(current_user.id))
-    current_place = next((i for i, (u, _) in enumerate(user_char_counts, 1) if u.id == current_user.id), 0)
+    current_count = len(await char_repo.get_by_owner(user.id))
+    current_place = next((i for i, (u, _) in enumerate(user_char_counts, 1) if u.id == user.id), 0)
     text = "👥 *ТОП КОЛЛЕКЦИОНЕРОВ*\n\n"
-    for i, (user, count) in enumerate(top_users, 1):
+    for i, (u, count) in enumerate(top_users, 1):
         medal = get_medal(i)
-        name = user.first_name or f"Игрок {user.telegram_id}"
+        name = u.first_name or f"Игрок {u.telegram_id}"
         text += f"{medal} {name} — {count} 👤\n"
     text += f"\n📍 *Твоё место:* #{current_place}\n"
     text += f"👥 *Твои персонажи:* {current_count}"
@@ -172,23 +177,25 @@ async def rating_reputation(query: CallbackQuery, session: AsyncSession):
     if not FEATURES.get("reputation"):
         await query.answer("❌ Система репутации временно отключена", show_alert=True)
         return
+
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+
     user_repo = UserRepository(session)
     result = await session.execute(
         select(User).order_by(desc(User.reputation)).limit(10)
     )
     top_users = result.scalars().all()
-    current_user = await user_repo.get_by_telegram_id(query.from_user.id)
-    if not current_user:
-        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
-        return
-    current_place = await get_user_place(session, current_user.id, User.reputation, "reputation")
+    current_place = await get_user_place(session, user.id, User.reputation, "reputation")
     text = "✨ *ТОП ПО РЕПУТАЦИИ*\n\n"
-    for i, user in enumerate(top_users, 1):
+    for i, u in enumerate(top_users, 1):
         medal = get_medal(i)
-        name = user.first_name or f"Игрок {user.telegram_id}"
-        text += f"{medal} {name} — {user.reputation} ✨\n"
+        name = u.first_name or f"Игрок {u.telegram_id}"
+        text += f"{medal} {name} — {u.reputation} ✨\n"
     text += f"\n📍 *Твоё место:* #{current_place}\n"
-    text += f"✨ *Твоя репутация:* {current_user.reputation}"
+    text += f"✨ *Твоя репутация:* {user.reputation}"
     buttons = [[InlineKeyboardButton(text="⬅️ К списку", callback_data="rating_back")]]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     await query.message.edit_text(text, reply_markup=keyboard)
@@ -196,33 +203,34 @@ async def rating_reputation(query: CallbackQuery, session: AsyncSession):
 
 @router.callback_query(F.data == "rating_weekly")
 async def rating_weekly(query: CallbackQuery, session: AsyncSession):
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+
     week_ago = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
     user_repo = UserRepository(session)
     all_users = await user_repo.get_all()
     weekly_stats = []
-    for user in all_users:
+    for u in all_users:
         result = await session.execute(
             select(BattleLog).where(
-                BattleLog.player_id == user.id,
+                BattleLog.player_id == u.id,
                 BattleLog.player_won == True,
                 BattleLog.battle_date >= week_ago
             )
         )
         weekly_wins = len(result.scalars().all())
-        weekly_stats.append((user, weekly_wins))
+        weekly_stats.append((u, weekly_wins))
     weekly_stats.sort(key=lambda x: x[1], reverse=True)
     top_weekly = weekly_stats[:10]
-    current_user = await user_repo.get_by_telegram_id(query.from_user.id)
-    if not current_user:
-        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
-        return
-    current_wins = next((w for u, w in weekly_stats if u.id == current_user.id), 0)
-    current_place = next((i for i, (u, _) in enumerate(weekly_stats, 1) if u.id == current_user.id), 0)
+    current_wins = next((w for u, w in weekly_stats if u.id == user.id), 0)
+    current_place = next((i for i, (u, _) in enumerate(weekly_stats, 1) if u.id == user.id), 0)
     text = "📈 *ТОП НЕДЕЛИ*\n\n"
     text += "Игроки с наибольшим количеством побед за последние 7 дней:\n\n"
-    for i, (user, wins) in enumerate(top_weekly, 1):
+    for i, (u, wins) in enumerate(top_weekly, 1):
         medal = get_medal(i)
-        name = user.first_name or f"Игрок {user.telegram_id}"
+        name = u.first_name or f"Игрок {u.telegram_id}"
         text += f"{medal} {name} — {wins} ⚔️\n"
     text += f"\n🎁 *НАГРАДЫ ТОП-3 НЕДЕЛИ:*\n"
     text += f"🥇 1 место: 5 💠\n"
