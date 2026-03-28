@@ -1,7 +1,8 @@
+import logging
 from datetime import datetime, timezone
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import Command, CommandObject
+from aiogram.filters import Command
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from database.models import FarmSlot, Character
@@ -17,13 +18,13 @@ from config.settings import settings
 from config.features import FEATURES
 from utils.ai_helper import get_mood_message
 
+logger = logging.getLogger(__name__)
 router = Router()
 
 def is_private(message: Message) -> bool:
     return message.chat.type == "private"
 
 def group_menu_kb() -> InlineKeyboardMarkup:
-    """Клавиатура для группы"""
     buttons = [
         [InlineKeyboardButton(text="👤 Профиль", callback_data="group_profile"),
          InlineKeyboardButton(text="🏆 Топ", callback_data="group_top")],
@@ -38,10 +39,11 @@ async def get_or_create_user(session: AsyncSession, telegram_id: int, username: 
     user = await user_repo.get_by_telegram_id(telegram_id)
     if not user:
         user = await user_repo.get_or_create(telegram_id, username, first_name)
-        farm_service = FarmService(session)
-        await farm_service.initialize_farm(user.id)
-        char_repo = CharacterRepository(session)
-        await char_repo.create_character(user.id, "layla", level=1)
+        if user:
+            farm_service = FarmService(session)
+            await farm_service.initialize_farm(user.id)
+            char_repo = CharacterRepository(session)
+            await char_repo.create_character(user.id, "layla", level=1)
     return user
 
 async def format_user_profile(user, session: AsyncSession):
@@ -85,12 +87,13 @@ async def format_user_profile(user, session: AsyncSession):
     msg = msg.replace("👤 *ПРОФИЛЬ*", f"👤 *ПРОФИЛЬ*{mood_text}")
     return msg
 
-# ========== ОБРАБОТКА КОМАНД С УПОМИНАНИЕМ ==========
-# Используем Command фильтр, который автоматически обрабатывает /command@botname
-
 @router.message(Command("start"))
 async def start_command(message: Message, session: AsyncSession):
     user = await get_or_create_user(session, message.from_user.id, message.from_user.username, message.from_user.first_name)
+    if not user:
+        await message.answer("❌ Ошибка при создании профиля. Попробуйте позже.")
+        return
+    
     user.last_visit = datetime.now(timezone.utc).replace(tzinfo=None)
     await UserRepository(session).update(user)
     
@@ -117,26 +120,26 @@ async def start_command(message: Message, session: AsyncSession):
 
 @router.message(Command("profile"))
 async def profile_command(message: Message, session: AsyncSession):
-    user_repo = UserRepository(session)
-    user = await user_repo.get_by_telegram_id(message.from_user.id)
+    user = await get_or_create_user(session, message.from_user.id, message.from_user.username, message.from_user.first_name)
     if not user:
-        user = await get_or_create_user(session, message.from_user.id, message.from_user.username, message.from_user.first_name)
+        await message.answer("❌ Ошибка: пользователь не найден")
+        return
     
     user.last_visit = datetime.now(timezone.utc).replace(tzinfo=None)
-    await user_repo.update(user)
+    await UserRepository(session).update(user)
     
     msg = await format_user_profile(user, session)
     await message.answer(msg)
 
 @router.callback_query(MainMenuCallback.filter(F.action == "profile"))
 async def show_profile_callback(query: CallbackQuery, session: AsyncSession):
-    user_repo = UserRepository(session)
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
+    user = await get_or_create_user(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
     if not user:
-        user = await get_or_create_user(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
     
     user.last_visit = datetime.now(timezone.utc).replace(tzinfo=None)
-    await user_repo.update(user)
+    await UserRepository(session).update(user)
     
     msg = await format_user_profile(user, session)
     await query.message.edit_text(msg, reply_markup=main_menu_kb())
@@ -157,10 +160,10 @@ async def top_command(message: Message, session: AsyncSession):
 
 @router.message(Command("collect"))
 async def collect_income_command(message: Message, session: AsyncSession):
-    user_repo = UserRepository(session)
-    user = await user_repo.get_by_telegram_id(message.from_user.id)
+    user = await get_or_create_user(session, message.from_user.id, message.from_user.username, message.from_user.first_name)
     if not user:
-        user = await get_or_create_user(session, message.from_user.id, message.from_user.username, message.from_user.first_name)
+        await message.answer("❌ Ошибка: пользователь не найден")
+        return
     
     service = PassiveIncomeService(session)
     result = await service.collect_income(user.id)
@@ -198,7 +201,6 @@ async def farm_command(message: Message, session: AsyncSession):
         await message.answer("🌱 *Ферма* доступна только в личных сообщениях с ботом!\n\nИспользуйте /start в личке, чтобы начать играть.")
         return
     
-    # Перенаправляем в farm_handlers
     from handlers.farm_handlers import farm_command as farm_cmd
     await farm_cmd(message, session)
 
@@ -238,6 +240,12 @@ async def pvp_command(message: Message, session: AsyncSession):
     from handlers.group_pvp import start_pvp_duel
     await start_pvp_duel(message, session)
 
+@router.message(Command("rating"))
+@router.message(Command("top"))
+async def rating_command(message: Message, session: AsyncSession):
+    from handlers.rating_handlers import rating_menu
+    await rating_menu(message)
+
 @router.message(Command("help"))
 async def help_command(message: Message):
     if is_private(message):
@@ -252,7 +260,8 @@ async def help_command(message: Message):
             "⚔️ `/battle` — бои (только в личке)\n"
             "🏪 `/market` — рынок (только в личке)\n"
             "🎰 `/casino` — казино (только в личке)\n"
-            "⚔️ `/pvp @username` — вызвать на дуэль\n\n"
+            "⚔️ `/pvp @username` — вызвать на дуэль\n"
+            "🏆 `/rating` — рейтинги\n\n"
             "✨ *Удачной игры!*",
             reply_markup=group_menu_kb()
         )
