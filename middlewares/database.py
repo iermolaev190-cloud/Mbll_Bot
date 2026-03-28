@@ -1,5 +1,6 @@
 from typing import Callable, Any, Awaitable
 from aiogram import BaseMiddleware
+from aiogram.types import Update, Message, CallbackQuery
 from database.core import AsyncSessionLocal
 
 class DatabaseMiddleware(BaseMiddleware):
