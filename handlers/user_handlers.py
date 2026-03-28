@@ -203,10 +203,10 @@ async def help_command(message: Message):
             "👤 `/profile` — твой профиль\n"
             "🏆 `/top` — топ игроков\n"
             "💰 `/collect` — собрать пассивный доход\n"
-            "🌱 `/farm` — ферма\n"
-            "⚔️ `/battle` — бои\n"
-            "🏪 `/market` — рынок\n"
-            "🎰 `/casino` — казино\n"
+            "🌱 `/farm` — ферма (только в личке)\n"
+            "⚔️ `/battle` — бои (только в личке)\n"
+            "🏪 `/market` — рынок (только в личке)\n"
+            "🎰 `/casino` — казино (только в личке)\n"
             "⚔️ `/pvp @username` — вызвать на дуэль\n\n"
             "✨ *Удачной игры!*",
             reply_markup=group_menu_kb()
