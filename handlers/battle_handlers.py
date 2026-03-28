@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.repository.user_repo import UserRepository
 from database.repository.character_repo import CharacterRepository
 from services.battle_engine import BattleEngine
-from services.farm_service import FarmService
 from keyboards.inline_kb import battle_menu_kb, character_selection_kb
 from keyboards.callbacks import BattleCallback, MainMenuCallback, CharacterSelectCallback
 from config.texts import BATTLE_MENU, BUTTON_BACK
@@ -15,26 +14,10 @@ from config.character_config import get_character
 from config.emoji import RARITY_EMOJI
 from config.features import FEATURES
 from utils.ai_helper import generate_pve_enemy
+from database.utils import get_user_or_create
 
 logger = logging.getLogger(__name__)
 router = Router()
-
-async def get_user_or_create(session: AsyncSession, user_id: int, username: str = None, first_name: str = None):
-    user_repo = UserRepository(session)
-    user = await user_repo.get_by_telegram_id(user_id)
-    if not user:
-        try:
-            user = await user_repo.get_or_create(user_id, username, first_name)
-            if user:
-                farm_service = FarmService(session)
-                await farm_service.initialize_farm(user.id)
-                char_repo = CharacterRepository(session)
-                await char_repo.create_character(user.id, "layla", level=1)
-                await session.commit()
-        except Exception as e:
-            logger.error(f"Ошибка создания пользователя {user_id}: {e}")
-            return None
-    return user
 
 @router.message(Command("battle"))
 async def battle_command(message: Message, session: AsyncSession):
