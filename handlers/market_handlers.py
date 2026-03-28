@@ -1,5 +1,6 @@
 import random
 import re
+import logging
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
@@ -24,6 +25,8 @@ from config.game_config import MIN_MARKET_PRICE, MAX_MARKET_PRICE, MARKET_COMMIS
 from config.features import FEATURES
 from utils.ai_helper import get_market_message
 
+logger = logging.getLogger(__name__)
+
 class MarketStates(StatesGroup):
     waiting_for_price = State()
 
@@ -34,15 +37,19 @@ async def get_user_or_create(session: AsyncSession, user_id: int, username: str 
     user = await user_repo.get_by_telegram_id(user_id)
     if not user:
         user = await user_repo.get_or_create(user_id, username, first_name)
-        farm_service = FarmService(session)
-        await farm_service.initialize_farm(user.id)
-        char_repo = CharacterRepository(session)
-        await char_repo.create_character(user.id, "layla", level=1)
+        if user:
+            farm_service = FarmService(session)
+            await farm_service.initialize_farm(user.id)
+            char_repo = CharacterRepository(session)
+            await char_repo.create_character(user.id, "layla", level=1)
     return user
 
 @router.message(Command("market"))
 async def market_command(message: Message, session: AsyncSession):
     user = await get_user_or_create(session, message.from_user.id, message.from_user.username, message.from_user.first_name)
+    if not user:
+        await message.answer("❌ Ошибка: не удалось создать профиль")
+        return
     await message.answer(MARKET_MENU, reply_markup=market_menu_kb())
 
 @router.callback_query(MainMenuCallback.filter(F.action == "market"))
@@ -119,15 +126,16 @@ async def show_listing_detail(query: CallbackQuery, callback_data: MarketCallbac
 
 @router.callback_query(MarketCallback.filter(F.action == "confirm_buy"))
 async def confirm_purchase(query: CallbackQuery, callback_data: MarketCallback, session: AsyncSession):
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+    
     market_service = MarketService(session)
-    user_repo = UserRepository(session)
     rep_service = ReputationService(session)
-
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
-    
     market_repo = MarketRepository(session)
-    listing = await market_repo.get_by_id(callback_data.listing_id)
     
+    listing = await market_repo.get_by_id(callback_data.listing_id)
     if not listing:
         await query.answer("❌ Объявление не найдено", show_alert=True)
         return
@@ -157,11 +165,12 @@ async def confirm_purchase(query: CallbackQuery, callback_data: MarketCallback, 
 
 @router.callback_query(MarketCallback.filter(F.action == "sell"))
 async def sell_character_menu(query: CallbackQuery, callback_data: MarketCallback, session: AsyncSession):
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+    
     character_repo = CharacterRepository(session)
-    user_repo = UserRepository(session)
-
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
-
     all_characters = await character_repo.get_by_owner(user.id)
     available = []
 
@@ -194,11 +203,14 @@ async def sell_character_menu(query: CallbackQuery, callback_data: MarketCallbac
 @router.callback_query(MarketCallback.filter(F.action == "set_price"))
 async def set_price_prompt(query: CallbackQuery, callback_data: MarketCallback, session: AsyncSession,
                            state: FSMContext):
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+    
     character_repo = CharacterRepository(session)
-    user_repo = UserRepository(session)
     market_service = MarketService(session)
 
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
     character = await character_repo.get_by_id(callback_data.character_id)
     char_data = get_character(character.character_type)
 
@@ -259,12 +271,14 @@ async def process_price_input(message: Message, state: FSMContext, session: Asyn
 
 @router.callback_query(MarketCallback.filter(F.action == "create_listing"))
 async def create_listing(query: CallbackQuery, callback_data: MarketCallback, session: AsyncSession):
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+    
     market_service = MarketService(session)
-    user_repo = UserRepository(session)
     character_repo = CharacterRepository(session)
     rep_service = ReputationService(session)
-
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
 
     text = query.message.text
     price_match = re.search(r'💰 Цена: (\d+)', text)
@@ -305,10 +319,12 @@ async def create_listing(query: CallbackQuery, callback_data: MarketCallback, se
 
 @router.callback_query(MarketCallback.filter(F.action == "my_listings"))
 async def my_listings(query: CallbackQuery, callback_data: MarketCallback, session: AsyncSession):
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+    
     market_service = MarketService(session)
-    user_repo = UserRepository(session)
-
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
     listings = await market_service.get_seller_listings(user.id)
 
     if not listings:
@@ -324,10 +340,12 @@ async def my_listings(query: CallbackQuery, callback_data: MarketCallback, sessi
 
 @router.callback_query(MarketCallback.filter(F.action == "cancel_listing"))
 async def cancel_listing(query: CallbackQuery, callback_data: MarketCallback, session: AsyncSession):
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+    
     market_service = MarketService(session)
-    user_repo = UserRepository(session)
-
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
     result = await market_service.cancel_listing(user.id, callback_data.listing_id)
 
     if "error" in result:
