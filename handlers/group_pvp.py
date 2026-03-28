@@ -18,12 +18,17 @@ async def get_user_or_create(session: AsyncSession, user_id: int, username: str 
     user_repo = UserRepository(session)
     user = await user_repo.get_by_telegram_id(user_id)
     if not user:
-        user = await user_repo.get_or_create(user_id, username, first_name)
-        if user:
-            farm_service = FarmService(session)
-            await farm_service.initialize_farm(user.id)
-            char_repo = CharacterRepository(session)
-            await char_repo.create_character(user.id, "layla", level=1)
+        try:
+            user = await user_repo.get_or_create(user_id, username, first_name)
+            if user:
+                farm_service = FarmService(session)
+                await farm_service.initialize_farm(user.id)
+                char_repo = CharacterRepository(session)
+                await char_repo.create_character(user.id, "layla", level=1)
+                await session.commit()
+        except Exception as e:
+            logger.error(f"❌ Ошибка создания пользователя {user_id}: {e}")
+            return None
     return user
 
 @router.message(Command("pvp"))
@@ -57,11 +62,7 @@ async def start_pvp_duel(message: Message, session: AsyncSession):
     
     defender = None
     try:
-        members = []
         async for member in message.chat.get_members():
-            members.append(member)
-        
-        for member in members:
             if member.user.is_bot:
                 continue
             if (member.user.username and member.user.username.lower() == target.lower()) or \
