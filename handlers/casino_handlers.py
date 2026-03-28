@@ -1,4 +1,5 @@
 import random
+import logging
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
@@ -12,6 +13,7 @@ from config.texts import BUTTON_BACK
 from config.features import FEATURES
 from utils.ai_helper import get_casino_message
 
+logger = logging.getLogger(__name__)
 router = Router()
 
 async def get_user_or_create(session: AsyncSession, user_id: int, username: str = None, first_name: str = None):
@@ -19,21 +21,28 @@ async def get_user_or_create(session: AsyncSession, user_id: int, username: str 
     user = await user_repo.get_by_telegram_id(user_id)
     if not user:
         user = await user_repo.get_or_create(user_id, username, first_name)
-        farm_service = FarmService(session)
-        await farm_service.initialize_farm(user.id)
-        char_repo = CharacterRepository(session)
-        await char_repo.create_character(user.id, "layla", level=1)
+        if user:
+            farm_service = FarmService(session)
+            await farm_service.initialize_farm(user.id)
+            char_repo = CharacterRepository(session)
+            await char_repo.create_character(user.id, "layla", level=1)
     return user
 
 @router.message(Command("casino"))
 @router.message(Command("game"))
 async def casino_command(message: Message, session: AsyncSession):
     user = await get_user_or_create(session, message.from_user.id, message.from_user.username, message.from_user.first_name)
+    if not user:
+        await message.answer("❌ Ошибка: не удалось создать профиль")
+        return
     await casino_main_menu(message, session, is_edit=False, user_id=message.from_user.id)
 
 @router.callback_query(MainMenuCallback.filter(F.action == "casino"))
 async def casino_from_main(query: CallbackQuery, session: AsyncSession):
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
     await casino_main_menu(query.message, session, is_edit=True, user_id=query.from_user.id)
     await query.answer()
 
@@ -81,11 +90,13 @@ async def casino_main_menu(message: Message, session: AsyncSession, is_edit: boo
     else:
         await message.answer(msg_text, reply_markup=keyboard)
 
-# ========== БОУЛИНГ ==========
 @router.callback_query(F.data == "casino_bowling")
 async def bowling_bet(query: CallbackQuery, session: AsyncSession):
-    user_repo = UserRepository(session)
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+    
     await session.refresh(user)
     
     buttons = [
@@ -114,8 +125,10 @@ async def bowling_bet(query: CallbackQuery, session: AsyncSession):
 @router.callback_query(F.data.startswith("bowling_"))
 async def bowling_play(query: CallbackQuery, session: AsyncSession):
     bet = int(query.data.split("_")[1])
-    user_repo = UserRepository(session)
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
     
     if user.coins < bet:
         await query.answer(f"❌ Недостаточно монет! Нужно: {bet}", show_alert=True)
@@ -164,11 +177,13 @@ async def bowling_play(query: CallbackQuery, session: AsyncSession):
     )
     await query.answer()
 
-# ========== БАСКЕТБОЛ ==========
 @router.callback_query(F.data == "casino_basketball")
 async def basketball_bet(query: CallbackQuery, session: AsyncSession):
-    user_repo = UserRepository(session)
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+    
     await session.refresh(user)
     
     buttons = [
@@ -197,8 +212,10 @@ async def basketball_bet(query: CallbackQuery, session: AsyncSession):
 @router.callback_query(F.data.startswith("basketball_"))
 async def basketball_play(query: CallbackQuery, session: AsyncSession):
     bet = int(query.data.split("_")[1])
-    user_repo = UserRepository(session)
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
     
     if user.coins < bet:
         await query.answer(f"❌ Недостаточно монет! Нужно: {bet}", show_alert=True)
@@ -243,11 +260,13 @@ async def basketball_play(query: CallbackQuery, session: AsyncSession):
     )
     await query.answer()
 
-# ========== ДАРТС ==========
 @router.callback_query(F.data == "casino_darts")
 async def darts_bet(query: CallbackQuery, session: AsyncSession):
-    user_repo = UserRepository(session)
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+    
     await session.refresh(user)
     
     buttons = [
@@ -276,8 +295,10 @@ async def darts_bet(query: CallbackQuery, session: AsyncSession):
 @router.callback_query(F.data.startswith("darts_"))
 async def darts_play(query: CallbackQuery, session: AsyncSession):
     bet = int(query.data.split("_")[1])
-    user_repo = UserRepository(session)
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
     
     if user.coins < bet:
         await query.answer(f"❌ Недостаточно монет! Нужно: {bet}", show_alert=True)
@@ -322,11 +343,13 @@ async def darts_play(query: CallbackQuery, session: AsyncSession):
     )
     await query.answer()
 
-# ========== СЛОТЫ ==========
 @router.callback_query(F.data == "casino_slots")
 async def slots_bet(query: CallbackQuery, session: AsyncSession):
-    user_repo = UserRepository(session)
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+    
     await session.refresh(user)
     
     buttons = [
@@ -355,8 +378,10 @@ async def slots_bet(query: CallbackQuery, session: AsyncSession):
 @router.callback_query(F.data.startswith("slots_"))
 async def slots_play(query: CallbackQuery, session: AsyncSession):
     bet = int(query.data.split("_")[1])
-    user_repo = UserRepository(session)
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
     
     if user.coins < bet:
         await query.answer(f"❌ Недостаточно монет! Нужно: {bet}", show_alert=True)
