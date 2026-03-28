@@ -7,7 +7,7 @@ from handlers.rating_handlers import router as rating_router
 from handlers.casino_handlers import router as casino_router
 from handlers.admin_handlers import router as admin_router
 from handlers.exchange_handlers import router as exchange_router
-from handlers.reputation_handlers import router as reputation_router
+from handlers.group_pvp import router as group_pvp_router
 
 __all__ = [
     "user_router",
@@ -19,5 +19,5 @@ __all__ = [
     "casino_router",
     "admin_router",
     "exchange_router",
-    "reputation_router",
+    "group_pvp_router",
 ]
