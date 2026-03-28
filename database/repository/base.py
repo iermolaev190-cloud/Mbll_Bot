@@ -20,19 +20,18 @@ class BaseRepository(Generic[T]):
 
     async def create(self, obj: T) -> T:
         self.session.add(obj)
-        await self.session.commit()
-        await self.session.refresh(obj)
+        await self.session.flush()
         return obj
 
     async def update(self, obj: T) -> T:
         await self.session.merge(obj)
-        await self.session.commit()
+        await self.session.flush()
         return obj
 
     async def delete(self, id: int) -> bool:
         obj = await self.get_by_id(id)
         if obj:
             await self.session.delete(obj)
-            await self.session.commit()
+            await self.session.flush()
             return True
         return False
