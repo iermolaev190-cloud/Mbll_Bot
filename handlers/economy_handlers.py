@@ -24,17 +24,23 @@ async def get_user_or_create(session: AsyncSession, user_id: int, username: str 
     user_repo = UserRepository(session)
     user = await user_repo.get_by_telegram_id(user_id)
     if not user:
-        user = await user_repo.get_or_create(user_id, username, first_name)
-        farm_service = FarmService(session)
-        await farm_service.initialize_farm(user.id)
-        char_repo = CharacterRepository(session)
-        await char_repo.create_character(user.id, "layla", level=1)
+        try:
+            user = await user_repo.get_or_create(user_id, username, first_name)
+            if user:
+                farm_service = FarmService(session)
+                await farm_service.initialize_farm(user.id)
+                char_repo = CharacterRepository(session)
+                await char_repo.create_character(user.id, "layla", level=1)
+                await session.commit()
+        except Exception as e:
+            print(f"Ошибка создания пользователя {user_id}: {e}")
+            return None
     return user
 
 @router.message(Command("economy"))
 async def economy_command(message: Message, session: AsyncSession):
     user = await get_user_or_create(session, message.from_user.id, message.from_user.username, message.from_user.first_name)
-    
+
     msg = f"""💰 *ОБМЕН ВАЛЮТ*
 
 💰 Монеты: {user.coins:,}
@@ -47,13 +53,13 @@ async def economy_command(message: Message, session: AsyncSession):
 3️⃣ {EXCHANGE_RATES['crystals_to_diamonds']}💎 = 1💠
 
 Выбери действие:"""
-    
+
     await message.answer(msg, reply_markup=economy_menu_kb())
 
 @router.callback_query(MainMenuCallback.filter(F.action == "economy"))
 async def show_economy_menu(query: CallbackQuery, session: AsyncSession):
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
-    
+
     msg = f"""💰 *ОБМЕН ВАЛЮТ*
 
 💰 Монеты: {user.coins:,}
@@ -66,17 +72,17 @@ async def show_economy_menu(query: CallbackQuery, session: AsyncSession):
 3️⃣ {EXCHANGE_RATES['crystals_to_diamonds']}💎 = 1💠
 
 Выбери действие:"""
-    
+
     await query.message.edit_text(msg, reply_markup=economy_menu_kb())
     await query.answer()
 
 @router.callback_query(EconomyCallback.filter(F.action == "exchange_coins"))
 async def exchange_coins_start(query: CallbackQuery, state: FSMContext, session: AsyncSession):
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
-    
+
     rate = EXCHANGE_RATES["coins_to_crystals"]
     max_amount = user.coins // rate
-    
+
     await query.message.edit_text(
         f"""💰 *ОБМЕН МОНЕТ НА КРИСТАЛЛЫ*
 
@@ -86,7 +92,7 @@ async def exchange_coins_start(query: CallbackQuery, state: FSMContext, session:
 
 📝 Введи количество кристаллов (от 1 до {max_amount}):"""
     )
-    
+
     await state.set_state(ExchangeStates.waiting_for_amount)
     await state.update_data(exchange_type="coins_to_crystals")
     await query.answer()
@@ -95,16 +101,16 @@ async def exchange_coins_start(query: CallbackQuery, state: FSMContext, session:
 async def exchange_complex_start(query: CallbackQuery, session: AsyncSession):
     economy_service = EconomyService(session)
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
-    
+
     required = EXCHANGE_RATES["coins_and_crystals_to_diamond"]
-    
+
     if user.coins >= required["coins"] and user.crystals >= required["crystals"]:
         result = await economy_service.exchange_coins_crystals_to_diamond(user.id)
-        
+
         if "error" in result:
             await query.answer(result.get("message", "❌ Ошибка"), show_alert=True)
             return
-        
+
         await query.message.edit_text(
             f"""✅ *ОБМЕН ВЫПОЛНЕН!*
 
@@ -118,7 +124,7 @@ async def exchange_complex_start(query: CallbackQuery, session: AsyncSession):
     else:
         missing_coins = max(0, required["coins"] - user.coins)
         missing_crystals = max(0, required["crystals"] - user.crystals)
-        
+
         await query.message.edit_text(
             f"""❌ *НЕДОСТАТОЧНО РЕСУРСОВ!*
 
@@ -134,16 +140,16 @@ async def exchange_complex_start(query: CallbackQuery, session: AsyncSession):
 🌾 Заработай на ферме или в боях!""",
             reply_markup=economy_menu_kb()
         )
-    
+
     await query.answer()
 
 @router.callback_query(EconomyCallback.filter(F.action == "exchange_crystals"))
 async def exchange_crystals_start(query: CallbackQuery, state: FSMContext, session: AsyncSession):
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
-    
+
     rate = EXCHANGE_RATES["crystals_to_diamonds"]
     max_amount = user.crystals // rate
-    
+
     await query.message.edit_text(
         f"""💠 *ОБМЕН КРИСТАЛЛОВ НА АЛМАЗЫ*
 
@@ -153,7 +159,7 @@ async def exchange_crystals_start(query: CallbackQuery, state: FSMContext, sessi
 
 📝 Введи количество алмазов (от 1 до {max_amount}):"""
     )
-    
+
     await state.set_state(ExchangeStates.waiting_for_amount)
     await state.update_data(exchange_type="crystals_to_diamonds")
     await query.answer()
@@ -171,17 +177,17 @@ async def process_exchange_amount(message: Message, state: FSMContext, session: 
     except ValueError:
         await message.answer("❌ Введи число!")
         return
-    
+
     data = await state.get_data()
     exchange_type = data.get("exchange_type")
-    
+
     user = await get_user_or_create(session, message.from_user.id, message.from_user.username, message.from_user.first_name)
     economy_service = EconomyService(session)
-    
+
     if exchange_type == "coins_to_crystals":
         rate = EXCHANGE_RATES["coins_to_crystals"]
         needed_coins = amount * rate
-        
+
         if user.coins < needed_coins:
             max_amount = user.coins // rate
             await message.answer(
@@ -192,14 +198,14 @@ async def process_exchange_amount(message: Message, state: FSMContext, session: 
                 f"🌾 *Введи другое количество:*"
             )
             return
-        
+
         result = await economy_service.exchange_coins_to_crystals(user.id, amount)
-        
+
         if "error" in result:
             await message.answer(result.get("message", "❌ Ошибка"))
             await state.clear()
             return
-        
+
         await message.answer(
             f"""✅ *ОБМЕН ВЫПОЛНЕН!*
 
@@ -210,11 +216,11 @@ async def process_exchange_amount(message: Message, state: FSMContext, session: 
 💠 *Алмазы:* {result['diamonds']}""",
             reply_markup=economy_menu_kb()
         )
-        
+
     elif exchange_type == "crystals_to_diamonds":
         rate = EXCHANGE_RATES["crystals_to_diamonds"]
         needed_crystals = amount * rate
-        
+
         if user.crystals < needed_crystals:
             max_amount = user.crystals // rate
             await message.answer(
@@ -225,14 +231,14 @@ async def process_exchange_amount(message: Message, state: FSMContext, session: 
                 f"💎 *Введи другое количество:*"
             )
             return
-        
+
         result = await economy_service.exchange_crystals_to_diamonds(user.id, amount)
-        
+
         if "error" in result:
             await message.answer(result.get("message", "❌ Ошибка"))
             await state.clear()
             return
-        
+
         await message.answer(
             f"""✅ *ОБМЕН ВЫПОЛНЕН!*
 
@@ -243,13 +249,13 @@ async def process_exchange_amount(message: Message, state: FSMContext, session: 
 💠 *Алмазы:* {result['diamonds']}""",
             reply_markup=economy_menu_kb()
         )
-    
+
     await state.clear()
 
 @router.callback_query(EconomyCallback.filter(F.action == "stats"))
 async def economy_stats(query: CallbackQuery, session: AsyncSession):
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
-    
+
     msg = f"""📊 *ТВОЯ ЭКОНОМИКА*
 
 💰 Монеты: {user.coins:,}
@@ -262,10 +268,10 @@ async def economy_stats(query: CallbackQuery, session: AsyncSession):
 • {EXCHANGE_RATES['crystals_to_diamonds']}💎 = 1💠
 
 💡 *Совет:* Алмазы можно получить только обменом или в топе недели!"""
-    
+
     buttons = [[InlineKeyboardButton(text=BUTTON_BACK, callback_data=MainMenuCallback(action="economy").pack())]]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    
+
     await query.message.edit_text(msg, reply_markup=keyboard)
     await query.answer()
 
@@ -273,9 +279,9 @@ async def economy_stats(query: CallbackQuery, session: AsyncSession):
 async def exchange_history(query: CallbackQuery, session: AsyncSession):
     economy_service = EconomyService(session)
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
-    
+
     history = await economy_service.get_transaction_history(user.id, limit=10)
-    
+
     if not history:
         msg = "📭 *У тебя пока нет истории обменов*"
     else:
@@ -287,9 +293,9 @@ async def exchange_history(query: CallbackQuery, session: AsyncSession):
                 msg += f"• {h['date']}\n  Получено: {h['got']}\n\n"
             elif h["gave"]:
                 msg += f"• {h['date']}\n  Отдано: {h['gave']}\n\n"
-    
+
     buttons = [[InlineKeyboardButton(text=BUTTON_BACK, callback_data=MainMenuCallback(action="economy").pack())]]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    
+
     await query.message.edit_text(msg, reply_markup=keyboard)
     await query.answer()
