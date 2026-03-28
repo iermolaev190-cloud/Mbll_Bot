@@ -191,11 +191,6 @@ async def start_pvp(query: CallbackQuery, session: AsyncSession):
     character_repo = CharacterRepository(session)
     battle_engine = BattleEngine(session)
     
-    team = await character_repo.get_team(user.id)
-    if len(team) < 3:
-        await query.answer(f"❌ В команде {len(team)}/3 персонажей. Нужно 3!", show_alert=True)
-        return
-    
     all_users = await UserRepository(session).get_all()
     opponents = [u for u in all_users if u.id != user.id and u.id != 0]
 
@@ -208,6 +203,12 @@ if len(opponent_team) < 3:
         result = await battle_engine.start_pve_battle(user.id, "medium")
     else:
         opponent = random.choice(opponents)
+
+        opponent_team = await character_repo.get_team(opponent.id)
+if len(opponent_team) < 3:
+    await query.answer("❌ У противника нет полной команды!", show_alert=True)
+    return
+    
         result = await battle_engine.start_pvp_battle(user.id, opponent.id)
     
     if "error" in result:
