@@ -16,7 +16,6 @@ class BanCheckMiddleware(BaseMiddleware):
         message_obj = None
         is_callback = False
         
-        # Определяем тип события
         if isinstance(event, Message):
             user_id = event.from_user.id
             message_obj = event
