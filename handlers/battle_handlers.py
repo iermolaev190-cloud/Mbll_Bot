@@ -40,7 +40,7 @@ async def get_user_or_create(session: AsyncSession, user_id: int, username: str 
 async def battle_command(message: Message, session: AsyncSession):
     user = await get_user_or_create(session, message.from_user.id, message.from_user.username, message.from_user.first_name)
     if not user:
-        await message.answer("❌ Ошибка: не удалось создать профиль")
+        await message.answer("Ошибка: не удалось создать профиль")
         return
     await message.answer(BATTLE_MENU, reply_markup=battle_menu_kb())
 
@@ -48,7 +48,7 @@ async def battle_command(message: Message, session: AsyncSession):
 async def show_battle_from_main(query: CallbackQuery, session: AsyncSession):
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
     if not user:
-        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        await query.answer("Ошибка: пользователь не найден", show_alert=True)
         return
     await query.message.edit_text(BATTLE_MENU, reply_markup=battle_menu_kb())
     await query.answer()
@@ -62,14 +62,14 @@ async def show_battle_menu(query: CallbackQuery):
 async def select_team(query: CallbackQuery, session: AsyncSession):
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
     if not user:
-        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        await query.answer("Ошибка: пользователь не найден", show_alert=True)
         return
 
     character_repo = CharacterRepository(session)
     all_characters = await character_repo.get_by_owner(user.id)
 
     if not all_characters:
-        await query.answer("❌ У тебя нет персонажей!\n\n🌱 Вырасти их на ферме!", show_alert=True)
+        await query.answer("У тебя нет персонажей!\n\nВырасти их на ферме!", show_alert=True)
         return
 
     available_chars = [char for char in all_characters if not char.is_on_farm]
@@ -99,14 +99,14 @@ async def select_team(query: CallbackQuery, session: AsyncSession):
 async def toggle_character(query: CallbackQuery, callback_data: CharacterSelectCallback, session: AsyncSession):
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
     if not user:
-        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        await query.answer("Ошибка: пользователь не найден", show_alert=True)
         return
 
     character_repo = CharacterRepository(session)
     character = await character_repo.get_by_id(callback_data.character_id)
 
     if not character or character.owner_id != user.id:
-        await query.answer("❌ Персонаж не найден", show_alert=True)
+        await query.answer("Персонаж не найден", show_alert=True)
         return
 
     current_team = await character_repo.get_team(user.id)
@@ -114,20 +114,20 @@ async def toggle_character(query: CallbackQuery, callback_data: CharacterSelectC
 
     if callback_data.action == "add":
         if len(current_team_ids) >= 3:
-            await query.answer("❌ Команда полная (макс 3)", show_alert=True)
+            await query.answer("Команда полная (макс 3)", show_alert=True)
             return
 
         character.is_in_team = True
         await character_repo.update(character)
         current_team_ids.append(callback_data.character_id)
-        await query.answer("✅ Добавлен в команду")
+        await query.answer("Добавлен в команду")
 
     elif callback_data.action == "remove":
         if callback_data.character_id in current_team_ids:
             character.is_in_team = False
             await character_repo.update(character)
             current_team_ids.remove(callback_data.character_id)
-            await query.answer("❌ Удален из команды")
+            await query.answer("Удален из команды")
 
     all_characters = await character_repo.get_by_owner(user.id)
     available_chars = [char for char in all_characters if not char.is_on_farm]
@@ -157,24 +157,22 @@ async def toggle_character(query: CallbackQuery, callback_data: CharacterSelectC
 async def view_team(query: CallbackQuery, session: AsyncSession):
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
     if not user:
-        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        await query.answer("Ошибка: пользователь не найден", show_alert=True)
         return
 
     character_repo = CharacterRepository(session)
     team = await character_repo.get_team(user.id)
 
     if not team:
-        await query.answer("❌ Команда не выбрана", show_alert=True)
+        await query.answer("Команда не выбрана", show_alert=True)
         return
 
     team_display = ""
     for i, char in enumerate(team, 1):
         char_data = get_character(char.character_type)
-        team_display += f"""{i}. {RARITY_EMOJI.get(char_data.rarity, '⚪')} *{char_data.name}* L{char.level}
-   ❤️ {char.current_hp}/{char.max_hp} | 🗡️ {char.base_damage} | 🛡️ {char.base_armor}
-   ⚔️ Побед: {char.battle_wins} | 💀 Поражений: {char.battle_losses}
-
-"""
+        team_display += f"{i}. {RARITY_EMOJI.get(char_data.rarity, '⚪')} *{char_data.name}* L{char.level}\n"
+        team_display += f"   ❤️ {char.current_hp}/{char.max_hp} | 🗡️ {char.base_damage} | 🛡️ {char.base_armor}\n"
+        team_display += f"   ⚔️ Побед: {char.battle_wins} | 💀 Поражений: {char.battle_losses}\n\n"
 
     msg = f"""👥 *ТВОЯ БОЕВАЯ КОМАНДА*
 
@@ -190,7 +188,7 @@ async def view_team(query: CallbackQuery, session: AsyncSession):
 async def start_pvp(query: CallbackQuery, session: AsyncSession):
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
     if not user:
-        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        await query.answer("Ошибка: пользователь не найден", show_alert=True)
         return
 
     character_repo = CharacterRepository(session)
@@ -198,7 +196,7 @@ async def start_pvp(query: CallbackQuery, session: AsyncSession):
 
     team = await character_repo.get_team(user.id)
     if len(team) < 3:
-        await query.answer(f"❌ В команде {len(team)}/3 персонажей. Нужно 3!", show_alert=True)
+        await query.answer(f"В команде {len(team)}/3 персонажей. Нужно 3!", show_alert=True)
         return
 
     all_users = await UserRepository(session).get_all()
@@ -211,13 +209,13 @@ async def start_pvp(query: CallbackQuery, session: AsyncSession):
 
         opponent_team = await character_repo.get_team(opponent.id)
         if len(opponent_team) < 3:
-            await query.answer("❌ У противника нет полной команды!", show_alert=True)
+            await query.answer("У противника нет полной команды!", show_alert=True)
             return
 
         result = await battle_engine.start_pvp_battle(user.id, opponent.id)
 
     if "error" in result:
-        await query.answer(result.get("message", "❌ Ошибка боя"), show_alert=True)
+        await query.answer(result.get("message", "Ошибка боя"), show_alert=True)
         return
 
     if result["player_won"]:
@@ -238,7 +236,7 @@ async def start_pvp(query: CallbackQuery, session: AsyncSession):
 async def start_pve(query: CallbackQuery, session: AsyncSession):
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
     if not user:
-        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        await query.answer("Ошибка: пользователь не найден", show_alert=True)
         return
 
     character_repo = CharacterRepository(session)
@@ -247,7 +245,7 @@ async def start_pve(query: CallbackQuery, session: AsyncSession):
     avg_level = sum(char.level for char in team) // 3 if team else 1
 
     if len(team) < 3:
-        await query.answer(f"❌ В команде {len(team)}/3 персонажей. Нужно 3!", show_alert=True)
+        await query.answer(f"В команде {len(team)}/3 персонажей. Нужно 3!", show_alert=True)
         return
 
     buttons = [
@@ -261,13 +259,11 @@ async def start_pve(query: CallbackQuery, session: AsyncSession):
     intro_text = "⚔️ *ВЫБЕРИ СЛОЖНОСТЬ PvE*"
     if FEATURES.get("smart_pve"):
         enemy = await generate_pve_enemy("medium", avg_level)
-        intro_text = f"""⚔️ *ВСТРЕЧАЙ ПРОТИВНИКА!*
-
-👤 *{enemy['name']}*
-🗣️ "{enemy['talk']}"
-⚠️ *Особенность:* {enemy['mechanic']}
-
-Выбери сложность:
+        intro_text = f"⚔️ *ВСТРЕЧАЙ ПРОТИВНИКА!*\n\n"
+        intro_text += f"👤 *{enemy['name']}*\n"
+        intro_text += f"🗣️ \"{enemy['talk']}\"\n"
+        intro_text += f"⚠️ *Особенность:* {enemy['mechanic']}\n\n"
+        intro_text += "Выбери сложность:"
 
     await query.message.edit_text(intro_text, reply_markup=keyboard)
     await query.answer()
@@ -276,7 +272,7 @@ async def start_pve(query: CallbackQuery, session: AsyncSession):
 async def start_pve_with_difficulty(query: CallbackQuery, session: AsyncSession):
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
     if not user:
-        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        await query.answer("Ошибка: пользователь не найден", show_alert=True)
         return
 
     difficulty = query.data.split("_")[1]
@@ -295,7 +291,7 @@ async def start_pve_with_difficulty(query: CallbackQuery, session: AsyncSession)
     result = await battle_engine.start_pve_battle(user.id, difficulty)
 
     if "error" in result:
-        await query.answer(result.get("message", "❌ Ошибка боя"), show_alert=True)
+        await query.answer(result.get("message", "Ошибка боя"), show_alert=True)
         return
 
     if result["player_won"]:
