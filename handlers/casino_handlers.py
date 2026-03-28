@@ -20,12 +20,17 @@ async def get_user_or_create(session: AsyncSession, user_id: int, username: str 
     user_repo = UserRepository(session)
     user = await user_repo.get_by_telegram_id(user_id)
     if not user:
-        user = await user_repo.get_or_create(user_id, username, first_name)
-        if user:
-            farm_service = FarmService(session)
-            await farm_service.initialize_farm(user.id)
-            char_repo = CharacterRepository(session)
-            await char_repo.create_character(user.id, "layla", level=1)
+        try:
+            user = await user_repo.get_or_create(user_id, username, first_name)
+            if user:
+                farm_service = FarmService(session)
+                await farm_service.initialize_farm(user.id)
+                char_repo = CharacterRepository(session)
+                await char_repo.create_character(user.id, "layla", level=1)
+                await session.commit()
+        except Exception as e:
+            logger.error(f"Ошибка создания пользователя {user_id}: {e}")
+            return None
     return user
 
 @router.message(Command("casino"))
@@ -58,13 +63,13 @@ async def casino_main_menu(message: Message, session: AsyncSession, is_edit: boo
         {"tid": target_id}
     )
     coins = result.scalar() or 0
-    
+
     welcome_text = ""
     if FEATURES.get("casino_talk"):
         welcome = await get_casino_message("welcome")
         if welcome:
             welcome_text = f"\n{welcome}\n"
-    
+
     buttons = [
         [InlineKeyboardButton(text="🎳 БОУЛИНГ — x2", callback_data="casino_bowling")],
         [InlineKeyboardButton(text="🏀 БАСКЕТБОЛ — x3", callback_data="casino_basketball")],
@@ -73,7 +78,7 @@ async def casino_main_menu(message: Message, session: AsyncSession, is_edit: boo
         [InlineKeyboardButton(text=BUTTON_BACK, callback_data=MainMenuCallback(action="profile").pack())],
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    
+
     msg_text = f"""🎰 *LAS VEGAS CASINO* 🎰
 {welcome_text}
 💰 *Твой баланс:* {coins:,} монет
@@ -84,7 +89,7 @@ async def casino_main_menu(message: Message, session: AsyncSession, is_edit: boo
 🎰 *СЛОТЫ* — Джекпот (x10)
 
 Выбери игру:"""
-    
+
     if is_edit:
         await message.edit_text(msg_text, reply_markup=keyboard)
     else:
@@ -96,9 +101,9 @@ async def bowling_bet(query: CallbackQuery, session: AsyncSession):
     if not user:
         await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
         return
-    
+
     await session.refresh(user)
-    
+
     buttons = [
         [InlineKeyboardButton(text="500💰", callback_data="bowling_500"),
          InlineKeyboardButton(text="1,000💰", callback_data="bowling_1000")],
@@ -109,7 +114,7 @@ async def bowling_bet(query: CallbackQuery, session: AsyncSession):
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="casino_main")],
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    
+
     await query.message.edit_text(
         f"""🎳 *БОУЛИНГ*
 
@@ -129,18 +134,18 @@ async def bowling_play(query: CallbackQuery, session: AsyncSession):
     if not user:
         await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
         return
-    
+
     if user.coins < bet:
         await query.answer(f"❌ Недостаточно монет! Нужно: {bet}", show_alert=True)
         return
-    
+
     await session.execute(
         sql_text("UPDATE users SET coins = coins - :bet WHERE telegram_id = :tg_id"),
         {"bet": bet, "tg_id": query.from_user.id}
     )
-    
+
     is_strike = random.random() < 0.35
-    
+
     if is_strike:
         prize = bet * 2
         await session.execute(
@@ -162,15 +167,15 @@ async def bowling_play(query: CallbackQuery, session: AsyncSession):
 {lose_msg}
 
 💸 *Проигрыш:* -{bet}💰"""
-    
+
     await session.commit()
-    
+
     buttons = [
         [InlineKeyboardButton(text="🎳 ЕЩЕ РАЗ", callback_data="casino_bowling")],
         [InlineKeyboardButton(text="🎰 В КАЗИНО", callback_data="casino_main")],
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    
+
     await query.message.edit_text(
         f"{result_text}\n\n💰 *Баланс:* {user.coins - bet + (prize if is_strike else 0)}💰",
         reply_markup=keyboard
@@ -183,9 +188,9 @@ async def basketball_bet(query: CallbackQuery, session: AsyncSession):
     if not user:
         await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
         return
-    
+
     await session.refresh(user)
-    
+
     buttons = [
         [InlineKeyboardButton(text="500💰", callback_data="basketball_500"),
          InlineKeyboardButton(text="1,000💰", callback_data="basketball_1000")],
@@ -196,7 +201,7 @@ async def basketball_bet(query: CallbackQuery, session: AsyncSession):
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="casino_main")],
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    
+
     await query.message.edit_text(
         f"""🏀 *БАСКЕТБОЛ*
 
@@ -216,18 +221,18 @@ async def basketball_play(query: CallbackQuery, session: AsyncSession):
     if not user:
         await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
         return
-    
+
     if user.coins < bet:
         await query.answer(f"❌ Недостаточно монет! Нужно: {bet}", show_alert=True)
         return
-    
+
     await session.execute(
         sql_text("UPDATE users SET coins = coins - :bet WHERE telegram_id = :tg_id"),
         {"bet": bet, "tg_id": query.from_user.id}
     )
-    
+
     is_score = random.random() < 0.25
-    
+
     if is_score:
         prize = bet * 3
         await session.execute(
@@ -245,15 +250,15 @@ async def basketball_play(query: CallbackQuery, session: AsyncSession):
 {lose_msg}
 
 💸 *Проигрыш:* -{bet}💰"""
-    
+
     await session.commit()
-    
+
     buttons = [
         [InlineKeyboardButton(text="🏀 ЕЩЕ РАЗ", callback_data="casino_basketball")],
         [InlineKeyboardButton(text="🎰 В КАЗИНО", callback_data="casino_main")],
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    
+
     await query.message.edit_text(
         f"{result_text}\n\n💰 *Баланс:* {user.coins - bet + (prize if is_score else 0)}💰",
         reply_markup=keyboard
@@ -266,9 +271,9 @@ async def darts_bet(query: CallbackQuery, session: AsyncSession):
     if not user:
         await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
         return
-    
+
     await session.refresh(user)
-    
+
     buttons = [
         [InlineKeyboardButton(text="500💰", callback_data="darts_500"),
          InlineKeyboardButton(text="1,000💰", callback_data="darts_1000")],
@@ -279,7 +284,7 @@ async def darts_bet(query: CallbackQuery, session: AsyncSession):
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="casino_main")],
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    
+
     await query.message.edit_text(
         f"""🎯 *ДАРТС*
 
@@ -299,18 +304,18 @@ async def darts_play(query: CallbackQuery, session: AsyncSession):
     if not user:
         await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
         return
-    
+
     if user.coins < bet:
         await query.answer(f"❌ Недостаточно монет! Нужно: {bet}", show_alert=True)
         return
-    
+
     await session.execute(
         sql_text("UPDATE users SET coins = coins - :bet WHERE telegram_id = :tg_id"),
         {"bet": bet, "tg_id": query.from_user.id}
     )
-    
+
     is_bullseye = random.random() < 0.15
-    
+
     if is_bullseye:
         prize = bet * 5
         await session.execute(
@@ -328,15 +333,15 @@ async def darts_play(query: CallbackQuery, session: AsyncSession):
 {lose_msg}
 
 💸 *Проигрыш:* -{bet}💰"""
-    
+
     await session.commit()
-    
+
     buttons = [
         [InlineKeyboardButton(text="🎯 ЕЩЕ РАЗ", callback_data="casino_darts")],
         [InlineKeyboardButton(text="🎰 В КАЗИНО", callback_data="casino_main")],
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    
+
     await query.message.edit_text(
         f"{result_text}\n\n💰 *Баланс:* {user.coins - bet + (prize if is_bullseye else 0)}💰",
         reply_markup=keyboard
@@ -349,9 +354,9 @@ async def slots_bet(query: CallbackQuery, session: AsyncSession):
     if not user:
         await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
         return
-    
+
     await session.refresh(user)
-    
+
     buttons = [
         [InlineKeyboardButton(text="500💰", callback_data="slots_500"),
          InlineKeyboardButton(text="1,000💰", callback_data="slots_1000")],
@@ -362,7 +367,7 @@ async def slots_bet(query: CallbackQuery, session: AsyncSession):
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="casino_main")],
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    
+
     await query.message.edit_text(
         f"""🎰 *СЛОТЫ*
 
@@ -382,18 +387,18 @@ async def slots_play(query: CallbackQuery, session: AsyncSession):
     if not user:
         await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
         return
-    
+
     if user.coins < bet:
         await query.answer(f"❌ Недостаточно монет! Нужно: {bet}", show_alert=True)
         return
-    
+
     await session.execute(
         sql_text("UPDATE users SET coins = coins - :bet WHERE telegram_id = :tg_id"),
         {"bet": bet, "tg_id": query.from_user.id}
     )
-    
+
     is_jackpot = random.random() < 0.07
-    
+
     if is_jackpot:
         prize = bet * 10
         await session.execute(
@@ -418,15 +423,15 @@ async def slots_play(query: CallbackQuery, session: AsyncSession):
 ╚═══════╩═══════╩═══════╝
 
 💸 *Проигрыш:* -{bet}💰"""
-    
+
     await session.commit()
-    
+
     buttons = [
         [InlineKeyboardButton(text="🎰 ЕЩЕ РАЗ", callback_data="casino_slots")],
         [InlineKeyboardButton(text="🎰 В КАЗИНО", callback_data="casino_main")],
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    
+
     await query.message.edit_text(
         f"{result_text}\n\n💰 *Баланс:* {user.coins - bet + (prize if is_jackpot else 0)}💰",
         reply_markup=keyboard
