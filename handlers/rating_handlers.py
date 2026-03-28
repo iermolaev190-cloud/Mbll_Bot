@@ -236,7 +236,7 @@ async def rating_weekly(query: CallbackQuery, session: AsyncSession):
     await query.answer()
 
 @router.callback_query(F.data == "rating_back")
-async def rating_back(query: CallbackQuery):
+async def rating_back(query: CallbackQuery, session: AsyncSession):
     buttons = [
         [InlineKeyboardButton(text="💰 По монетам", callback_data="rating_coins")],
         [InlineKeyboardButton(text="🏆 По победам", callback_data="rating_wins")],
