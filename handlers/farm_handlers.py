@@ -1,3 +1,4 @@
+import logging
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
@@ -8,7 +9,7 @@ from database.repository.user_repo import UserRepository
 from database.repository.farm_repo import FarmRepository
 from database.repository.character_repo import CharacterRepository
 from services.farm_service import FarmService
-from keyboards.inline_kb import farm_menu_kb, farm_slots_kb, slot_actions_kb, main_menu_kb
+from keyboards.inline_kb import farm_menu_kb, farm_slots_kb, slot_actions_kb
 from keyboards.callbacks import FarmCallback, MainMenuCallback, BattleCallback
 from config.texts import *
 from config.character_config import get_character
@@ -17,6 +18,7 @@ from config.features import FEATURES
 from utils.ai_helper import get_daily_event, get_weather, get_spirit_message, generate_character_story
 from datetime import datetime, timezone
 
+logger = logging.getLogger(__name__)
 router = Router()
 
 async def get_user_or_create(session: AsyncSession, user_id: int, username: str = None, first_name: str = None):
@@ -24,20 +26,27 @@ async def get_user_or_create(session: AsyncSession, user_id: int, username: str 
     user = await user_repo.get_by_telegram_id(user_id)
     if not user:
         user = await user_repo.get_or_create(user_id, username, first_name)
-        farm_service = FarmService(session)
-        await farm_service.initialize_farm(user.id)
-        char_repo = CharacterRepository(session)
-        await char_repo.create_character(user.id, "layla", level=1)
+        if user:
+            farm_service = FarmService(session)
+            await farm_service.initialize_farm(user.id)
+            char_repo = CharacterRepository(session)
+            await char_repo.create_character(user.id, "layla", level=1)
     return user
 
 @router.message(Command("farm"))
 async def farm_command(message: Message, session: AsyncSession):
     user = await get_user_or_create(session, message.from_user.id, message.from_user.username, message.from_user.first_name)
+    if not user:
+        await message.answer("❌ Ошибка: не удалось создать пользователя")
+        return
     await show_farm_menu_logic(user.id, message, session, is_edit=False)
 
 @router.callback_query(MainMenuCallback.filter(F.action == "farm"))
 async def show_farm_menu(query: CallbackQuery, session: AsyncSession):
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
     await show_farm_menu_logic(user.id, query.message, session, is_edit=True)
     await query.answer()
 
@@ -46,6 +55,13 @@ async def show_farm_menu_logic(user_id: int, message_obj, session: AsyncSession,
     farm_service = FarmService(session)
     
     user = await user_repo.get_by_telegram_id(user_id)
+    if not user:
+        if is_edit:
+            await message_obj.edit_text("❌ Ошибка: пользователь не найден")
+        else:
+            await message_obj.answer("❌ Ошибка: пользователь не найден")
+        return
+    
     status = await farm_service.get_farm_status(user.id)
     
     event_text = ""
@@ -100,10 +116,12 @@ async def view_farm_slots(query: CallbackQuery):
 
 @router.callback_query(FarmCallback.filter(F.action == "slot"))
 async def show_slot_detail(query: CallbackQuery, callback_data: FarmCallback, session: AsyncSession):
-    user_repo = UserRepository(session)
-    farm_repo = FarmRepository(session)
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
     
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
+    farm_repo = FarmRepository(session)
     slot_id = callback_data.slot_id
     
     await farm_repo.update_farm_growth(user.id)
@@ -164,12 +182,13 @@ async def show_slot_detail(query: CallbackQuery, callback_data: FarmCallback, se
 
 @router.callback_query(FarmCallback.filter(F.action == "plant"))
 async def plant_seed_handler(query: CallbackQuery, callback_data: FarmCallback, session: AsyncSession):
-    user_repo = UserRepository(session)
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+    
     farm_service = FarmService(session)
-    
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
     slot_id = callback_data.slot_id
-    
     EGG_PRICE = 5000
     
     if user.coins < EGG_PRICE:
@@ -183,7 +202,7 @@ async def plant_seed_handler(query: CallbackQuery, callback_data: FarmCallback, 
         return
     
     user.coins -= EGG_PRICE
-    await user_repo.update(user)
+    await UserRepository(session).update(user)
     
     char_data = get_character(character.character_type)
     
@@ -204,10 +223,12 @@ async def plant_seed_handler(query: CallbackQuery, callback_data: FarmCallback, 
 
 @router.callback_query(FarmCallback.filter(F.action == "water"))
 async def water_plant_handler(query: CallbackQuery, callback_data: FarmCallback, session: AsyncSession):
-    user_repo = UserRepository(session)
-    farm_service = FarmService(session)
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
     
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
+    farm_service = FarmService(session)
     slot_id = callback_data.slot_id
     
     if user.coins < 10:
@@ -221,7 +242,7 @@ async def water_plant_handler(query: CallbackQuery, callback_data: FarmCallback,
         return
     
     user.coins -= 10
-    await user_repo.update(user)
+    await UserRepository(session).update(user)
     
     msg = f"""💧 *РАСТЕНИЕ ПОЛИТО!*
 
@@ -236,11 +257,13 @@ async def water_plant_handler(query: CallbackQuery, callback_data: FarmCallback,
 
 @router.callback_query(FarmCallback.filter(F.action == "harvest"))
 async def harvest_plant_handler(query: CallbackQuery, callback_data: FarmCallback, session: AsyncSession):
-    user_repo = UserRepository(session)
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+    
     farm_service = FarmService(session)
     char_repo = CharacterRepository(session)
-    
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
     slot_id = callback_data.slot_id
     
     chars_before = await char_repo.get_by_owner(user.id)
@@ -285,10 +308,12 @@ async def harvest_plant_handler(query: CallbackQuery, callback_data: FarmCallbac
 
 @router.callback_query(FarmCallback.filter(F.action == "water_all"))
 async def water_all_plants(query: CallbackQuery, callback_data: FarmCallback, session: AsyncSession):
-    user_repo = UserRepository(session)
-    farm_service = FarmService(session)
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
     
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
+    farm_service = FarmService(session)
     status = await farm_service.get_farm_status(user.id)
     
     slots_to_water = [s for s in status["slots"] if s.get("needs_water", False)]
@@ -310,7 +335,7 @@ async def water_all_plants(query: CallbackQuery, callback_data: FarmCallback, se
             watered_count += 1
     
     user.coins -= total_cost
-    await user_repo.update(user)
+    await UserRepository(session).update(user)
     
     msg = f"""💧 *МАССОВЫЙ ПОЛИВ!*
 
