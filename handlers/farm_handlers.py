@@ -21,28 +21,40 @@ from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 router = Router()
 
+
 async def get_user_or_create(session: AsyncSession, user_id: int, username: str = None, first_name: str = None):
+    """Получить или создать пользователя"""
     user_repo = UserRepository(session)
     user = await user_repo.get_by_telegram_id(user_id)
     if not user:
-        user = await user_repo.get_or_create(user_id, username, first_name)
-        if user:
-            farm_service = FarmService(session)
-            await farm_service.initialize_farm(user.id)
-            char_repo = CharacterRepository(session)
-            await char_repo.create_character(user.id, "layla", level=1)
+        try:
+            user = await user_repo.get_or_create(user_id, username, first_name)
+            if user:
+                farm_service = FarmService(session)
+                await farm_service.initialize_farm(user.id)
+                char_repo = CharacterRepository(session)
+                await char_repo.create_character(user.id, "layla", level=1)
+                await session.commit()
+                logger.info(f"✅ Создан новый пользователь: {user_id}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка создания пользователя {user_id}: {e}")
+            return None
     return user
+
 
 @router.message(Command("farm"))
 async def farm_command(message: Message, session: AsyncSession):
+    """Обработка команды /farm"""
     user = await get_user_or_create(session, message.from_user.id, message.from_user.username, message.from_user.first_name)
     if not user:
-        await message.answer("❌ Ошибка: не удалось создать пользователя")
+        await message.answer("❌ Ошибка: не удалось создать профиль. Попробуйте позже.")
         return
     await show_farm_menu_logic(user.id, message, session, is_edit=False)
 
+
 @router.callback_query(MainMenuCallback.filter(F.action == "farm"))
 async def show_farm_menu(query: CallbackQuery, session: AsyncSession):
+    """Показать главное меню фермы"""
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
     if not user:
         await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
@@ -50,7 +62,9 @@ async def show_farm_menu(query: CallbackQuery, session: AsyncSession):
     await show_farm_menu_logic(user.id, query.message, session, is_edit=True)
     await query.answer()
 
+
 async def show_farm_menu_logic(user_id: int, message_obj, session: AsyncSession, is_edit: bool = False):
+    """Общая логика отображения фермы"""
     user_repo = UserRepository(session)
     farm_service = FarmService(session)
     
@@ -64,6 +78,7 @@ async def show_farm_menu_logic(user_id: int, message_obj, session: AsyncSession,
     
     status = await farm_service.get_farm_status(user.id)
     
+    # Ежедневное событие
     event_text = ""
     if FEATURES.get("daily_events"):
         event = await get_daily_event()
@@ -73,12 +88,14 @@ async def show_farm_menu_logic(user_id: int, message_obj, session: AsyncSession,
                 event_text += f"✨ {bonus}\n"
             event_text += "\n"
     
+    # Погода
     weather_text = ""
     if FEATURES.get("weather_system"):
         weather = await get_weather()
         if weather:
             weather_text = f"{weather['name']} | {weather['effect']}\n"
     
+    # Слоты
     slots_text = ""
     for slot in status["slots"]:
         if slot["is_occupied"]:
@@ -88,6 +105,7 @@ async def show_farm_menu_logic(user_id: int, message_obj, session: AsyncSession,
         else:
             slots_text += f"⭕ #{slot['slot_number']}: Пусто\n"
     
+    # Дух фермы
     spirit_text = ""
     if FEATURES.get("farm_spirit"):
         spirit = await get_spirit_message()
@@ -109,13 +127,17 @@ async def show_farm_menu_logic(user_id: int, message_obj, session: AsyncSession,
     else:
         await message_obj.answer(msg, reply_markup=farm_menu_kb())
 
+
 @router.callback_query(FarmCallback.filter(F.action == "slots"))
 async def view_farm_slots(query: CallbackQuery):
+    """Показать все грядки"""
     await query.message.edit_text("🌱 *ВЫБЕРИ ГРЯДКУ:*", reply_markup=farm_slots_kb())
     await query.answer()
 
+
 @router.callback_query(FarmCallback.filter(F.action == "slot"))
 async def show_slot_detail(query: CallbackQuery, callback_data: FarmCallback, session: AsyncSession):
+    """Детали конкретной грядки"""
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
     if not user:
         await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
@@ -180,8 +202,10 @@ async def show_slot_detail(query: CallbackQuery, callback_data: FarmCallback, se
     
     await query.answer()
 
+
 @router.callback_query(FarmCallback.filter(F.action == "plant"))
 async def plant_seed_handler(query: CallbackQuery, callback_data: FarmCallback, session: AsyncSession):
+    """Посадка яйца"""
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
     if not user:
         await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
@@ -221,8 +245,10 @@ async def plant_seed_handler(query: CallbackQuery, callback_data: FarmCallback, 
     await query.message.edit_text(msg, reply_markup=farm_menu_kb())
     await query.answer("🥚 Яйцо заложено в инкубатор!")
 
+
 @router.callback_query(FarmCallback.filter(F.action == "water"))
 async def water_plant_handler(query: CallbackQuery, callback_data: FarmCallback, session: AsyncSession):
+    """Полив растения"""
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
     if not user:
         await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
@@ -255,8 +281,10 @@ async def water_plant_handler(query: CallbackQuery, callback_data: FarmCallback,
     await query.message.edit_text(msg, reply_markup=farm_menu_kb())
     await query.answer("💧 Полено!")
 
+
 @router.callback_query(FarmCallback.filter(F.action == "harvest"))
 async def harvest_plant_handler(query: CallbackQuery, callback_data: FarmCallback, session: AsyncSession):
+    """Сбор урожая"""
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
     if not user:
         await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
@@ -306,8 +334,10 @@ async def harvest_plant_handler(query: CallbackQuery, callback_data: FarmCallbac
     await query.message.edit_text(msg, reply_markup=keyboard)
     await query.answer("🎉 Персонаж вылупился!")
 
+
 @router.callback_query(FarmCallback.filter(F.action == "water_all"))
 async def water_all_plants(query: CallbackQuery, callback_data: FarmCallback, session: AsyncSession):
+    """Массовый полив"""
     user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
     if not user:
         await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
