@@ -49,11 +49,25 @@ async def start_pvp_duel(message: Message, session: AsyncSession):
         await message.answer(f"❌ В твоей команде {len(attacker_team)}/3 персонажей. Нужно 3!")
         return
     
+    # Ищем пользователя по username или имени
     defender = None
-    async for member in message.chat.get_members():
-        if member.user.username == target or member.user.first_name == target or str(member.user.id) == target:
-            defender = await get_user_or_create(session, member.user.id, member.user.username, member.user.first_name)
-            break
+    try:
+        # Получаем всех участников чата (асинхронно)
+        members = []
+        async for member in message.chat.get_members():
+            members.append(member)
+        
+        for member in members:
+            if member.user.is_bot:
+                continue
+            if (member.user.username and member.user.username.lower() == target.lower()) or \
+               (member.user.first_name and member.user.first_name.lower() == target.lower()) or \
+               str(member.user.id) == target:
+                defender = await get_user_or_create(session, member.user.id, member.user.username, member.user.first_name)
+                break
+    except Exception as e:
+        await message.answer(f"❌ Ошибка при поиске участника: {e}")
+        return
     
     if not defender or defender.id == attacker.id:
         await message.answer(f"❌ Игрок {target} не найден или не играет в бота!")
