@@ -11,6 +11,7 @@ from database.repository.character_repo import CharacterRepository
 from database.repository.user_repo import UserRepository
 from services.market_service import MarketService
 from services.reputation_service import ReputationService
+from services.farm_service import FarmService
 from keyboards.inline_kb import (
     market_menu_kb, market_listings_kb, listing_detail_kb,
     sell_character_kb, sell_confirm_kb, my_listings_kb
@@ -23,43 +24,45 @@ from config.game_config import MIN_MARKET_PRICE, MAX_MARKET_PRICE, MARKET_COMMIS
 from config.features import FEATURES
 from utils.ai_helper import get_market_message
 
-
 class MarketStates(StatesGroup):
     waiting_for_price = State()
 
-
 router = Router()
 
+async def get_user_or_create(session: AsyncSession, user_id: int, username: str = None, first_name: str = None):
+    user_repo = UserRepository(session)
+    user = await user_repo.get_by_telegram_id(user_id)
+    if not user:
+        user = await user_repo.get_or_create(user_id, username, first_name)
+        farm_service = FarmService(session)
+        await farm_service.initialize_farm(user.id)
+        char_repo = CharacterRepository(session)
+        await char_repo.create_character(user.id, "layla", level=1)
+    return user
 
 @router.message(Command("market"))
-async def market_command(message: Message):
-    """Прямая команда для рынка"""
+async def market_command(message: Message, session: AsyncSession):
+    user = await get_user_or_create(session, message.from_user.id, message.from_user.username, message.from_user.first_name)
     await message.answer(MARKET_MENU, reply_markup=market_menu_kb())
-
 
 @router.callback_query(MainMenuCallback.filter(F.action == "market"))
 async def show_market_menu(query: CallbackQuery):
-    """Главное меню рынка"""
     welcome_text = ""
     if FEATURES.get("market_talk"):
         welcome = await get_market_message("welcome")
         if welcome:
             welcome_text = f"\n{welcome}\n"
-
+    
     await query.message.edit_text(f"{MARKET_MENU}{welcome_text}", reply_markup=market_menu_kb())
     await query.answer()
 
-
 @router.callback_query(MarketCallback.filter(F.action == "menu"))
 async def show_market_menu_cb(query: CallbackQuery):
-    """Возврат в меню рынка"""
     await query.message.edit_text(MARKET_MENU, reply_markup=market_menu_kb())
     await query.answer()
 
-
 @router.callback_query(MarketCallback.filter(F.action == "list"))
 async def show_listings(query: CallbackQuery, callback_data: MarketCallback, session: AsyncSession):
-    """Список объявлений"""
     market_service = MarketService(session)
     listings = await market_service.get_active_listings(limit=20)
 
@@ -67,8 +70,7 @@ async def show_listings(query: CallbackQuery, callback_data: MarketCallback, ses
         gossip = ""
         if FEATURES.get("market_gossip"):
             gossip = "\n\n" + await get_market_message("gossip")
-        # ========================
-
+        
         await query.message.edit_text(f"🏪 Рынок пуст. Приходи позже!{gossip}", reply_markup=market_menu_kb())
         await query.answer()
         return
@@ -76,17 +78,15 @@ async def show_listings(query: CallbackQuery, callback_data: MarketCallback, ses
     gossip = ""
     if FEATURES.get("market_gossip") and random.random() < 0.3:
         gossip = "\n\n" + await get_market_message("gossip")
-
+    
     await query.message.edit_text(
         f"🏪 *ДОСТУПНЫЕ ОБЪЯВЛЕНИЯ*\n\nВсего: {len(listings)}{gossip}",
         reply_markup=market_listings_kb(listings)
     )
     await query.answer()
 
-
 @router.callback_query(MarketCallback.filter(F.action == "buy"))
 async def show_listing_detail(query: CallbackQuery, callback_data: MarketCallback, session: AsyncSession):
-    """Детали объявления"""
     market_repo = MarketRepository(session)
     character_repo = CharacterRepository(session)
     user_repo = UserRepository(session)
@@ -117,35 +117,30 @@ async def show_listing_detail(query: CallbackQuery, callback_data: MarketCallbac
     await query.message.edit_text(msg, reply_markup=listing_detail_kb(listing.id))
     await query.answer()
 
-
 @router.callback_query(MarketCallback.filter(F.action == "confirm_buy"))
 async def confirm_purchase(query: CallbackQuery, callback_data: MarketCallback, session: AsyncSession):
-    """Подтверждение покупки"""
     market_service = MarketService(session)
     user_repo = UserRepository(session)
     rep_service = ReputationService(session)
 
     user = await user_repo.get_by_telegram_id(query.from_user.id)
-
+    
     market_repo = MarketRepository(session)
     listing = await market_repo.get_by_id(callback_data.listing_id)
-
+    
     if not listing:
         await query.answer("❌ Объявление не найдено", show_alert=True)
         return
-
-    price_with_discount = await rep_service.apply_market_discount(user.id, listing.price)
-
+    
     result = await market_service.purchase_listing(user.id, callback_data.listing_id)
 
     if "error" in result:
         if result["error"] == "insufficient_funds":
-            await query.answer(f"❌ Недостаточно монет! Нужно: {result['need']}, есть: {result['have']}",
-                               show_alert=True)
+            await query.answer(f"❌ Недостаточно монет! Нужно: {result['need']}, есть: {result['have']}", show_alert=True)
         else:
             await query.answer(f"❌ {result['error']}", show_alert=True)
         return
-
+    
     if FEATURES.get("reputation"):
         await rep_service.add_reputation(user.id, "market_buy")
 
@@ -160,10 +155,8 @@ async def confirm_purchase(query: CallbackQuery, callback_data: MarketCallback, 
     )
     await query.answer("🎉 Покупка совершена!")
 
-
 @router.callback_query(MarketCallback.filter(F.action == "sell"))
 async def sell_character_menu(query: CallbackQuery, callback_data: MarketCallback, session: AsyncSession):
-    """Меню продажи персонажа"""
     character_repo = CharacterRepository(session)
     user_repo = UserRepository(session)
 
@@ -198,11 +191,9 @@ async def sell_character_menu(query: CallbackQuery, callback_data: MarketCallbac
     await query.message.edit_text(text, reply_markup=sell_character_kb(available))
     await query.answer()
 
-
 @router.callback_query(MarketCallback.filter(F.action == "set_price"))
 async def set_price_prompt(query: CallbackQuery, callback_data: MarketCallback, session: AsyncSession,
                            state: FSMContext):
-    """Запрос цены"""
     character_repo = CharacterRepository(session)
     user_repo = UserRepository(session)
     market_service = MarketService(session)
@@ -230,10 +221,8 @@ async def set_price_prompt(query: CallbackQuery, callback_data: MarketCallback, 
     await state.update_data(character_id=callback_data.character_id)
     await query.answer()
 
-
 @router.message(MarketStates.waiting_for_price)
 async def process_price_input(message: Message, state: FSMContext, session: AsyncSession):
-    """Обработка введенной цены"""
     try:
         price = int(message.text)
     except ValueError:
@@ -268,10 +257,8 @@ async def process_price_input(message: Message, state: FSMContext, session: Asyn
     )
     await state.clear()
 
-
 @router.callback_query(MarketCallback.filter(F.action == "create_listing"))
 async def create_listing(query: CallbackQuery, callback_data: MarketCallback, session: AsyncSession):
-    """Создание объявления"""
     market_service = MarketService(session)
     user_repo = UserRepository(session)
     character_repo = CharacterRepository(session)
@@ -301,7 +288,6 @@ async def create_listing(query: CallbackQuery, callback_data: MarketCallback, se
 
     if FEATURES.get("reputation"):
         await rep_service.add_reputation(user.id, "market_sell")
-    # ================================
 
     await query.message.edit_text(
         f"""✅ *ОБЪЯВЛЕНИЕ РАЗМЕЩЕНО!*
@@ -317,10 +303,8 @@ async def create_listing(query: CallbackQuery, callback_data: MarketCallback, se
     )
     await query.answer("✅ Объявление создано!")
 
-
 @router.callback_query(MarketCallback.filter(F.action == "my_listings"))
 async def my_listings(query: CallbackQuery, callback_data: MarketCallback, session: AsyncSession):
-    """Мои объявления"""
     market_service = MarketService(session)
     user_repo = UserRepository(session)
 
@@ -338,10 +322,8 @@ async def my_listings(query: CallbackQuery, callback_data: MarketCallback, sessi
     )
     await query.answer()
 
-
 @router.callback_query(MarketCallback.filter(F.action == "cancel_listing"))
 async def cancel_listing(query: CallbackQuery, callback_data: MarketCallback, session: AsyncSession):
-    """Отмена объявления"""
     market_service = MarketService(session)
     user_repo = UserRepository(session)
 
