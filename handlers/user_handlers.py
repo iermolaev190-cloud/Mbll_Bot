@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -21,6 +21,17 @@ router = Router()
 
 def is_private(message: Message) -> bool:
     return message.chat.type == "private"
+
+def group_menu_kb() -> InlineKeyboardMarkup:
+    """Клавиатура для группы"""
+    buttons = [
+        [InlineKeyboardButton(text="👤 Профиль", callback_data="group_profile"),
+         InlineKeyboardButton(text="🏆 Топ", callback_data="group_top")],
+        [InlineKeyboardButton(text="💰 Собрать доход", callback_data="group_collect"),
+         InlineKeyboardButton(text="⚔️ Дуэль", switch_inline_query_current_chat="/pvp ")],
+        [InlineKeyboardButton(text="❓ Помощь", callback_data="group_help")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 async def get_or_create_user(session: AsyncSession, telegram_id: int, username: str = None, first_name: str = None):
     user_repo = UserRepository(session)
@@ -93,7 +104,8 @@ async def start_command(message: Message, session: AsyncSession):
             "• /casino — казино\n"
             "• /pvp @username — вызвать на дуэль\n"
             "• /help — помощь\n\n"
-            "✨ *Полный функционал доступен в личных сообщениях!*"
+            "✨ *Полный функционал доступен в личных сообщениях!*",
+            reply_markup=group_menu_kb()
         )
         return
     
@@ -196,7 +208,8 @@ async def help_command(message: Message):
             "🏪 `/market` — рынок\n"
             "🎰 `/casino` — казино\n"
             "⚔️ `/pvp @username` — вызвать на дуэль\n\n"
-            "✨ *Удачной игры!*"
+            "✨ *Удачной игры!*",
+            reply_markup=group_menu_kb()
         )
 
 @router.callback_query(MainMenuCallback.filter(F.action == "help"))
@@ -231,3 +244,24 @@ async def admin_panel(message: Message, session: AsyncSession):
     )
     
     await message.answer(msg, reply_markup=admin_menu_kb())
+
+# ========== ГРУППОВЫЕ КОЛБЭКИ ==========
+@router.callback_query(F.data == "group_profile")
+async def group_profile_callback(query: CallbackQuery, session: AsyncSession):
+    await profile_command(query.message, session)
+    await query.answer()
+
+@router.callback_query(F.data == "group_top")
+async def group_top_callback(query: CallbackQuery, session: AsyncSession):
+    await top_command(query.message, session)
+    await query.answer()
+
+@router.callback_query(F.data == "group_collect")
+async def group_collect_callback(query: CallbackQuery, session: AsyncSession):
+    await collect_income_command(query.message, session)
+    await query.answer()
+
+@router.callback_query(F.data == "group_help")
+async def group_help_callback(query: CallbackQuery):
+    await help_command(query.message)
+    await query.answer()
