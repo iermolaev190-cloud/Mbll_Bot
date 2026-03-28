@@ -17,32 +17,16 @@ from config.emoji import RARITY_EMOJI, ELEMENT_EMOJI
 from config.features import FEATURES
 from utils.ai_helper import get_daily_event, get_weather, get_spirit_message, generate_character_story
 from datetime import datetime, timezone
+from database.utils import get_user_or_create
 
 logger = logging.getLogger(__name__)
 router = Router()
-
-async def get_user_or_create(session: AsyncSession, user_id: int, username: str = None, first_name: str = None):
-    user_repo = UserRepository(session)
-    user = await user_repo.get_by_telegram_id(user_id)
-    if not user:
-        try:
-            user = await user_repo.get_or_create(user_id, username, first_name)
-            if user:
-                farm_service = FarmService(session)
-                await farm_service.initialize_farm(user.id)
-                char_repo = CharacterRepository(session)
-                await char_repo.create_character(user.id, "layla", level=1)
-                await session.commit()
-        except Exception as e:
-            logger.error(f"Ошибка создания пользователя {user_id}: {e}")
-            return None
-    return user
 
 @router.message(Command("farm"))
 async def farm_command(message: Message, session: AsyncSession):
     user = await get_user_or_create(session, message.from_user.id, message.from_user.username, message.from_user.first_name)
     if not user:
-        await message.answer("Ошибка: не удалось создать профиль. Попробуйте позже.")
+        await message.answer("Ошибка: не удалось создать профиль")
         return
     await show_farm_menu_logic(user.id, message, session, is_edit=False)
 
