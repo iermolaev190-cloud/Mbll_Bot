@@ -1,3 +1,4 @@
+import logging
 import random
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -8,6 +9,7 @@ from database.repository.character_repo import CharacterRepository
 from services.battle_engine import BattleEngine
 from services.farm_service import FarmService
 
+logger = logging.getLogger(__name__)
 router = Router()
 
 active_duels = {}
@@ -17,10 +19,11 @@ async def get_user_or_create(session: AsyncSession, user_id: int, username: str 
     user = await user_repo.get_by_telegram_id(user_id)
     if not user:
         user = await user_repo.get_or_create(user_id, username, first_name)
-        farm_service = FarmService(session)
-        await farm_service.initialize_farm(user.id)
-        char_repo = CharacterRepository(session)
-        await char_repo.create_character(user.id, "layla", level=1)
+        if user:
+            farm_service = FarmService(session)
+            await farm_service.initialize_farm(user.id)
+            char_repo = CharacterRepository(session)
+            await char_repo.create_character(user.id, "layla", level=1)
     return user
 
 @router.message(Command("pvp"))
@@ -43,16 +46,17 @@ async def start_pvp_duel(message: Message, session: AsyncSession):
     char_repo = CharacterRepository(session)
     
     attacker = await get_user_or_create(session, message.from_user.id, message.from_user.username, message.from_user.first_name)
+    if not attacker:
+        await message.answer("❌ Ошибка: не удалось создать профиль")
+        return
     
     attacker_team = await char_repo.get_team(attacker.id)
     if len(attacker_team) < 3:
         await message.answer(f"❌ В твоей команде {len(attacker_team)}/3 персонажей. Нужно 3!")
         return
     
-    # Ищем пользователя по username или имени
     defender = None
     try:
-        # Получаем всех участников чата (асинхронно)
         members = []
         async for member in message.chat.get_members():
             members.append(member)
