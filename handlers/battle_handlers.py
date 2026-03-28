@@ -1,4 +1,5 @@
 import random
+import logging
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
@@ -15,6 +16,7 @@ from config.emoji import RARITY_EMOJI
 from config.features import FEATURES
 from utils.ai_helper import generate_pve_enemy
 
+logger = logging.getLogger(__name__)
 router = Router()
 
 async def get_user_or_create(session: AsyncSession, user_id: int, username: str = None, first_name: str = None):
@@ -22,19 +24,27 @@ async def get_user_or_create(session: AsyncSession, user_id: int, username: str 
     user = await user_repo.get_by_telegram_id(user_id)
     if not user:
         user = await user_repo.get_or_create(user_id, username, first_name)
-        farm_service = FarmService(session)
-        await farm_service.initialize_farm(user.id)
-        char_repo = CharacterRepository(session)
-        await char_repo.create_character(user.id, "layla", level=1)
+        if user:
+            farm_service = FarmService(session)
+            await farm_service.initialize_farm(user.id)
+            char_repo = CharacterRepository(session)
+            await char_repo.create_character(user.id, "layla", level=1)
     return user
 
 @router.message(Command("battle"))
 async def battle_command(message: Message, session: AsyncSession):
     user = await get_user_or_create(session, message.from_user.id, message.from_user.username, message.from_user.first_name)
+    if not user:
+        await message.answer("❌ Ошибка: не удалось создать профиль")
+        return
     await message.answer(BATTLE_MENU, reply_markup=battle_menu_kb())
 
 @router.callback_query(MainMenuCallback.filter(F.action == "battle"))
 async def show_battle_from_main(query: CallbackQuery, session: AsyncSession):
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
     await query.message.edit_text(BATTLE_MENU, reply_markup=battle_menu_kb())
     await query.answer()
 
@@ -45,10 +55,12 @@ async def show_battle_menu(query: CallbackQuery):
 
 @router.callback_query(BattleCallback.filter(F.action == "select_team"))
 async def select_team(query: CallbackQuery, session: AsyncSession):
-    character_repo = CharacterRepository(session)
-    user_repo = UserRepository(session)
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
     
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
+    character_repo = CharacterRepository(session)
     all_characters = await character_repo.get_by_owner(user.id)
     
     if not all_characters:
@@ -80,10 +92,12 @@ async def select_team(query: CallbackQuery, session: AsyncSession):
 
 @router.callback_query(CharacterSelectCallback.filter())
 async def toggle_character(query: CallbackQuery, callback_data: CharacterSelectCallback, session: AsyncSession):
-    character_repo = CharacterRepository(session)
-    user_repo = UserRepository(session)
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
     
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
+    character_repo = CharacterRepository(session)
     character = await character_repo.get_by_id(callback_data.character_id)
     
     if not character or character.owner_id != user.id:
@@ -136,10 +150,12 @@ async def toggle_character(query: CallbackQuery, callback_data: CharacterSelectC
 
 @router.callback_query(BattleCallback.filter(F.action == "view_team"))
 async def view_team(query: CallbackQuery, session: AsyncSession):
-    character_repo = CharacterRepository(session)
-    user_repo = UserRepository(session)
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
     
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
+    character_repo = CharacterRepository(session)
     team = await character_repo.get_team(user.id)
     
     if not team:
@@ -167,18 +183,20 @@ async def view_team(query: CallbackQuery, session: AsyncSession):
 
 @router.callback_query(BattleCallback.filter(F.action == "start_pvp"))
 async def start_pvp(query: CallbackQuery, session: AsyncSession):
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+    
     character_repo = CharacterRepository(session)
-    user_repo = UserRepository(session)
     battle_engine = BattleEngine(session)
     
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
     team = await character_repo.get_team(user.id)
-    
     if len(team) < 3:
         await query.answer(f"❌ В команде {len(team)}/3 персонажей. Нужно 3!", show_alert=True)
         return
     
-    all_users = await user_repo.get_all()
+    all_users = await UserRepository(session).get_all()
     opponents = [u for u in all_users if u.id != user.id and u.id != 0]
     
     if not opponents:
@@ -213,10 +231,13 @@ async def start_pvp(query: CallbackQuery, session: AsyncSession):
 
 @router.callback_query(BattleCallback.filter(F.action == "start_pve"))
 async def start_pve(query: CallbackQuery, session: AsyncSession):
-    character_repo = CharacterRepository(session)
-    user_repo = UserRepository(session)
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
     
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
+    character_repo = CharacterRepository(session)
+    
     team = await character_repo.get_team(user.id)
     avg_level = sum(char.level for char in team) // 3 if team else 1
     
@@ -248,13 +269,16 @@ async def start_pve(query: CallbackQuery, session: AsyncSession):
 
 @router.callback_query(F.data.startswith("pve_"))
 async def start_pve_with_difficulty(query: CallbackQuery, session: AsyncSession):
+    user = await get_user_or_create(session, query.from_user.id, query.from_user.username, query.from_user.first_name)
+    if not user:
+        await query.answer("❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+    
     difficulty = query.data.split("_")[1]
     
     battle_engine = BattleEngine(session)
-    user_repo = UserRepository(session)
     character_repo = CharacterRepository(session)
     
-    user = await user_repo.get_by_telegram_id(query.from_user.id)
     team = await character_repo.get_team(user.id)
     avg_level = sum(char.level for char in team) // 3 if team else 1
     
